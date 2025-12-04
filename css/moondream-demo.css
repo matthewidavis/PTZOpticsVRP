@@ -1335,6 +1335,155 @@
 }
 
 /* ============================================================
+   PRODUCTION MONITOR - STATUS CARDS
+   ============================================================ */
+.moon-status-cards {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: var(--moon-space-sm);
+    margin-bottom: var(--moon-space-md);
+}
+
+.moon-status-card {
+    background: var(--moon-bg-tertiary);
+    border-radius: var(--moon-radius);
+    padding: var(--moon-space-sm);
+    cursor: pointer;
+    transition: all var(--moon-transition);
+    border: 2px solid transparent;
+    min-height: 70px;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+}
+
+.moon-status-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.moon-status-card-header {
+    display: flex;
+    align-items: center;
+    gap: var(--moon-space-xs);
+    margin-bottom: var(--moon-space-xs);
+}
+
+.moon-status-icon {
+    font-size: 16px;
+}
+
+.moon-status-label {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--moon-text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+    flex: 1;
+}
+
+.moon-status-source {
+    font-size: 9px;
+    color: var(--moon-text-muted);
+    background: var(--moon-bg-secondary);
+    padding: 2px 5px;
+    border-radius: 3px;
+}
+
+.moon-status-value {
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--moon-text);
+    text-align: center;
+    padding: var(--moon-space-xs) 0;
+}
+
+/* Status states */
+.moon-status-good {
+    border-color: #4CAF50;
+    background: rgba(76, 175, 80, 0.1);
+}
+.moon-status-good .moon-status-value {
+    color: #4CAF50;
+}
+
+.moon-status-bad {
+    border-color: #f44336;
+    background: rgba(244, 67, 54, 0.1);
+}
+.moon-status-bad .moon-status-value {
+    color: #f44336;
+}
+
+.moon-status-warning {
+    border-color: #FF9800;
+    background: rgba(255, 152, 0, 0.1);
+}
+.moon-status-warning .moon-status-value {
+    color: #FF9800;
+}
+
+.moon-status-disabled {
+    opacity: 0.6;
+    border-color: var(--moon-border);
+}
+.moon-status-disabled .moon-status-value {
+    color: var(--moon-text-muted);
+}
+
+.moon-status-off {
+    opacity: 0.4;
+}
+.moon-status-off::after {
+    content: 'DISABLED';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    font-size: 10px;
+    color: var(--moon-text-muted);
+    background: var(--moon-bg-secondary);
+    padding: 2px 6px;
+    border-radius: 3px;
+}
+
+.moon-status-card {
+    position: relative;
+}
+
+/* Scene description area */
+.moon-scene-description {
+    background: var(--moon-bg-tertiary);
+    border-radius: var(--moon-radius);
+    padding: var(--moon-space-md);
+    margin-top: var(--moon-space-md);
+}
+
+.moon-scene-description h4 {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--moon-text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: var(--moon-space-sm);
+}
+
+.moon-scene-text {
+    font-size: 14px;
+    line-height: 1.6;
+    color: var(--moon-text);
+    min-height: 60px;
+}
+
+/* Monitor status text */
+.moon-monitor-status-text {
+    font-size: 13px;
+    color: var(--moon-text-muted);
+    margin-top: var(--moon-space-sm);
+    text-align: center;
+}
+
+/* ============================================================
    DETAILS/ACCORDION
    ============================================================ */
 .moon-details { margin-top: var(--moon-space-lg); }

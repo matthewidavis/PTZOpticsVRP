@@ -2343,6 +2343,686 @@
     };
 
     // ============================================================
+    // WIDGET 6: PRODUCTION MONITOR (ShotSquire-style)
+    // ============================================================
+    function ProductionMonitorWidget() {
+        WidgetBase.call(this,
+            'production-monitor',
+            'Production Monitor',
+            '🎥',
+            'Real-time production quality monitoring combining client-side CV with MoonDream visual reasoning.'
+        );
+        this._monitors = {
+            orientation: { enabled: true, status: 'N/A', class: 'disabled' },
+            talking: { enabled: true, status: 'N/A', class: 'disabled' },
+            focus: { enabled: true, status: 'N/A', class: 'disabled' },
+            lighting: { enabled: true, status: 'N/A', class: 'disabled' },
+            presence: { enabled: true, status: 'N/A', class: 'disabled' },
+            composition: { enabled: true, status: 'N/A', class: 'disabled' },
+            sceneContext: { enabled: true, status: 'N/A', class: 'disabled' }
+        };
+        this._faceMesh = null;
+        this._cvReady = false;
+        this._isMonitoring = false;
+        this._monitorInterval = null;
+        this._landmarkHistory = [];
+        this._talkingState = { isTalking: false, lastChange: Date.now() };
+        this._lastMoonDreamCall = 0;
+    }
+    ProductionMonitorWidget.prototype = Object.create(WidgetBase.prototype);
+
+    ProductionMonitorWidget.prototype.render = function() {
+        var self = this;
+
+        var header = Utils.createElement('div', 'moon-widget-header');
+        header.innerHTML = '<span class="moon-widget-icon">' + this.icon + '</span>' +
+            '<h2 class="moon-widget-title">' + this.label + '</h2>' +
+            '<p class="moon-widget-desc">' + this.description + '</p>';
+        this.rootEl.appendChild(header);
+
+        var body = Utils.createElement('div', 'moon-widget-body');
+        var grid = Utils.createElement('div', 'moon-grid moon-grid-2');
+
+        // Left column - media
+        var leftCol = Utils.createElement('div', 'moon-col');
+        leftCol.appendChild(this.createMediaSection());
+
+        // Monitor controls
+        var controlsSection = Utils.createElement('div', 'moon-section');
+        var startBtn = Utils.createElement('button', 'moon-btn moon-btn-primary moon-btn-lg moon-btn-action moon-monitor-start', {
+            textContent: '▶ Start Monitoring'
+        });
+        startBtn.onclick = function() {
+            self.ensureApiKey(function() { self.toggleMonitoring(); });
+        };
+        controlsSection.appendChild(startBtn);
+
+        var statusText = Utils.createElement('div', 'moon-monitor-status-text');
+        statusText.textContent = 'Click monitors to enable/disable. Start monitoring to begin analysis.';
+        controlsSection.appendChild(statusText);
+
+        leftCol.appendChild(controlsSection);
+        grid.appendChild(leftCol);
+
+        // Right column - status cards
+        var rightCol = Utils.createElement('div', 'moon-col');
+
+        // Status cards grid
+        var cardsGrid = Utils.createElement('div', 'moon-status-cards');
+
+        var monitorConfig = [
+            { key: 'orientation', label: 'Orientation', icon: '📐', source: 'MediaPipe' },
+            { key: 'talking', label: 'Talking', icon: '🗣️', source: 'MediaPipe' },
+            { key: 'focus', label: 'Focus', icon: '🎯', source: 'OpenCV' },
+            { key: 'lighting', label: 'Lighting', icon: '💡', source: 'Canvas' },
+            { key: 'presence', label: 'Presence', icon: '👁️', source: 'MoonDream' },
+            { key: 'composition', label: 'Composition', icon: '🖼️', source: 'MoonDream' },
+            { key: 'sceneContext', label: 'Scene Context', icon: '🎬', source: 'MoonDream' }
+        ];
+
+        monitorConfig.forEach(function(config) {
+            var card = Utils.createElement('div', 'moon-status-card moon-status-disabled');
+            card.dataset.monitor = config.key;
+            card.innerHTML =
+                '<div class="moon-status-card-header">' +
+                    '<span class="moon-status-icon">' + config.icon + '</span>' +
+                    '<span class="moon-status-label">' + config.label + '</span>' +
+                    '<span class="moon-status-source">' + config.source + '</span>' +
+                '</div>' +
+                '<div class="moon-status-value">N/A</div>';
+            card.onclick = function() { self.toggleMonitor(config.key); };
+            cardsGrid.appendChild(card);
+            self._monitors[config.key].element = card;
+        });
+
+        rightCol.appendChild(cardsGrid);
+
+        // Scene description area
+        var sceneSection = Utils.createElement('div', 'moon-section moon-scene-description');
+        sceneSection.innerHTML = '<h4>Scene Description</h4>' +
+            '<div class="moon-scene-text">Start monitoring to see AI scene analysis...</div>';
+        rightCol.appendChild(sceneSection);
+
+        grid.appendChild(rightCol);
+        body.appendChild(grid);
+        this.rootEl.appendChild(body);
+
+        this._startBtn = startBtn;
+        this._statusText = statusText;
+        this._sceneText = sceneSection.querySelector('.moon-scene-text');
+
+        // Initialize CV libraries
+        this.initCV();
+    };
+
+    ProductionMonitorWidget.prototype.initCV = function() {
+        var self = this;
+
+        // Load MediaPipe FaceMesh
+        if (typeof FaceMesh !== 'undefined') {
+            this.setupFaceMesh();
+        } else {
+            // Dynamically load MediaPipe
+            var script1 = document.createElement('script');
+            script1.src = 'https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js';
+            script1.onload = function() {
+                var script2 = document.createElement('script');
+                script2.src = 'https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js';
+                script2.onload = function() {
+                    self.setupFaceMesh();
+                };
+                document.head.appendChild(script2);
+            };
+            document.head.appendChild(script1);
+        }
+
+        // Check for OpenCV
+        if (typeof cv !== 'undefined' && cv.Mat) {
+            this._cvReady = true;
+        } else {
+            // Try to load OpenCV
+            var cvScript = document.createElement('script');
+            cvScript.src = 'https://docs.opencv.org/4.x/opencv.js';
+            cvScript.onload = function() {
+                if (typeof cv !== 'undefined') {
+                    cv['onRuntimeInitialized'] = function() {
+                        self._cvReady = true;
+                        console.log('OpenCV ready');
+                    };
+                }
+            };
+            document.head.appendChild(cvScript);
+        }
+    };
+
+    ProductionMonitorWidget.prototype.setupFaceMesh = function() {
+        var self = this;
+        if (typeof FaceMesh === 'undefined') {
+            console.warn('FaceMesh not available');
+            return;
+        }
+
+        this._faceMesh = new FaceMesh({
+            locateFile: function(file) {
+                return 'https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/' + file;
+            }
+        });
+
+        this._faceMesh.setOptions({
+            maxNumFaces: 1,
+            refineLandmarks: true,
+            minDetectionConfidence: 0.5,
+            minTrackingConfidence: 0.5
+        });
+
+        this._faceMesh.onResults(function(results) {
+            self.processFrameResults(results);
+        });
+
+        console.log('FaceMesh initialized');
+    };
+
+    ProductionMonitorWidget.prototype.toggleMonitor = function(key) {
+        var monitor = this._monitors[key];
+        if (!monitor) return;
+
+        monitor.enabled = !monitor.enabled;
+        if (monitor.element) {
+            if (monitor.enabled) {
+                monitor.element.classList.remove('moon-status-off');
+            } else {
+                monitor.element.classList.add('moon-status-off');
+                this.updateMonitorStatus(key, 'OFF', 'disabled');
+            }
+        }
+    };
+
+    ProductionMonitorWidget.prototype.updateMonitorStatus = function(key, status, statusClass) {
+        var monitor = this._monitors[key];
+        if (!monitor || !monitor.element) return;
+
+        monitor.status = status;
+        monitor.class = statusClass;
+
+        var valueEl = monitor.element.querySelector('.moon-status-value');
+        if (valueEl) valueEl.textContent = status;
+
+        monitor.element.classList.remove('moon-status-good', 'moon-status-bad', 'moon-status-warning', 'moon-status-disabled');
+        monitor.element.classList.add('moon-status-' + statusClass);
+    };
+
+    ProductionMonitorWidget.prototype.toggleMonitoring = function() {
+        if (this._isMonitoring) {
+            this.stopMonitoring();
+        } else {
+            this.startMonitoring();
+        }
+    };
+
+    ProductionMonitorWidget.prototype.startMonitoring = function() {
+        var self = this;
+
+        if (!MediaCapture.stream && !this._currentImage) {
+            this.showError('Please start webcam or upload an image first');
+            return;
+        }
+
+        this._isMonitoring = true;
+        this._startBtn.textContent = '■ Stop Monitoring';
+        this._startBtn.classList.add('moon-btn-active');
+        this._statusText.textContent = 'Monitoring active...';
+
+        // Reset all monitors to initializing
+        Object.keys(this._monitors).forEach(function(key) {
+            if (self._monitors[key].enabled) {
+                self.updateMonitorStatus(key, 'Analyzing...', 'warning');
+            }
+        });
+
+        // Start monitoring loop
+        this.runMonitoringCycle();
+        this._monitorInterval = setInterval(function() {
+            self.runMonitoringCycle();
+        }, 1500);
+    };
+
+    ProductionMonitorWidget.prototype.stopMonitoring = function() {
+        this._isMonitoring = false;
+        this._startBtn.textContent = '▶ Start Monitoring';
+        this._startBtn.classList.remove('moon-btn-active');
+        this._statusText.textContent = 'Monitoring stopped.';
+
+        if (this._monitorInterval) {
+            clearInterval(this._monitorInterval);
+            this._monitorInterval = null;
+        }
+    };
+
+    ProductionMonitorWidget.prototype.runMonitoringCycle = function() {
+        var self = this;
+        if (!this._isMonitoring) return;
+
+        // Get current frame
+        var video = this._media ? this._media.video : null;
+
+        // Run client-side CV (MediaPipe)
+        if (this._faceMesh && video && MediaCapture.stream) {
+            this._faceMesh.send({ image: video }).catch(function(err) {
+                console.warn('FaceMesh error:', err);
+            });
+        }
+
+        // Run lighting analysis (doesn't need MediaPipe)
+        if (this._monitors.lighting.enabled) {
+            this.analyzeLighting();
+        }
+
+        // Run MoonDream analyses (throttled)
+        var now = Date.now();
+        if (now - this._lastMoonDreamCall > 2000) {
+            this._lastMoonDreamCall = now;
+            this.runMoonDreamAnalysis();
+        }
+    };
+
+    ProductionMonitorWidget.prototype.processFrameResults = function(results) {
+        var self = this;
+        if (!this._isMonitoring) return;
+
+        if (results.multiFaceLandmarks && results.multiFaceLandmarks.length > 0) {
+            var landmarks = this.smoothLandmarks(results.multiFaceLandmarks[0]);
+
+            // Orientation (MediaPipe)
+            if (this._monitors.orientation.enabled) {
+                this.analyzeOrientation(landmarks);
+            }
+
+            // Talking (MediaPipe)
+            if (this._monitors.talking.enabled) {
+                this.analyzeTalking(landmarks);
+            }
+
+            // Focus (OpenCV)
+            if (this._monitors.focus.enabled && this._cvReady) {
+                this.analyzeFocus(landmarks);
+            }
+        } else {
+            // No face detected by MediaPipe
+            if (this._monitors.orientation.enabled) {
+                this.updateMonitorStatus('orientation', 'NO FACE', 'bad');
+            }
+            if (this._monitors.talking.enabled) {
+                this.updateMonitorStatus('talking', 'NO FACE', 'bad');
+            }
+            if (this._monitors.focus.enabled) {
+                this.updateMonitorStatus('focus', 'NO FACE', 'bad');
+            }
+        }
+    };
+
+    ProductionMonitorWidget.prototype.smoothLandmarks = function(newLandmarks) {
+        this._landmarkHistory.push(newLandmarks);
+        if (this._landmarkHistory.length > 5) {
+            this._landmarkHistory.shift();
+        }
+
+        var numLandmarks = newLandmarks.length;
+        var smoothed = [];
+
+        for (var i = 0; i < numLandmarks; i++) {
+            var sumX = 0, sumY = 0, sumZ = 0, count = 0;
+            for (var j = 0; j < this._landmarkHistory.length; j++) {
+                var frame = this._landmarkHistory[j];
+                if (frame && frame[i]) {
+                    sumX += frame[i].x;
+                    sumY += frame[i].y;
+                    if (frame[i].z) sumZ += frame[i].z;
+                    count++;
+                }
+            }
+            if (count > 0) {
+                smoothed.push({ x: sumX / count, y: sumY / count, z: sumZ / count });
+            } else {
+                smoothed.push(newLandmarks[i]);
+            }
+        }
+
+        return smoothed;
+    };
+
+    // Landmark indices
+    var LANDMARKS = {
+        NOSE_TIP: 1,
+        LEFT_FACE: 234,
+        RIGHT_FACE: 454,
+        UPPER_LIP: 13,
+        LOWER_LIP: 14,
+        FOREHEAD: 10,
+        CHIN: 152,
+        LEFT_EYE: 33,
+        RIGHT_EYE: 263
+    };
+
+    ProductionMonitorWidget.prototype.analyzeOrientation = function(landmarks) {
+        var nose = landmarks[LANDMARKS.NOSE_TIP];
+        var left = landmarks[LANDMARKS.LEFT_FACE];
+        var right = landmarks[LANDMARKS.RIGHT_FACE];
+
+        if (!nose || !left || !right) {
+            this.updateMonitorStatus('orientation', 'ERROR', 'warning');
+            return;
+        }
+
+        var noseToLeft = Math.abs(nose.x - left.x);
+        var noseToRight = Math.abs(nose.x - right.x);
+        var diff = Math.abs(noseToLeft - noseToRight);
+
+        if (diff <= 0.15) {
+            this.updateMonitorStatus('orientation', 'STRAIGHT', 'good');
+        } else {
+            var direction = noseToLeft > noseToRight ? 'LEFT' : 'RIGHT';
+            this.updateMonitorStatus('orientation', direction, 'bad');
+        }
+    };
+
+    ProductionMonitorWidget.prototype.analyzeTalking = function(landmarks) {
+        var upperLip = landmarks[LANDMARKS.UPPER_LIP];
+        var lowerLip = landmarks[LANDMARKS.LOWER_LIP];
+
+        if (!upperLip || !lowerLip) {
+            this.updateMonitorStatus('talking', 'ERROR', 'warning');
+            return;
+        }
+
+        var distance = Math.abs(upperLip.y - lowerLip.y);
+        // Threshold tuned for normalized coordinates (0-1 range)
+        // Typical closed mouth: ~0.01-0.015, talking: >0.02
+        var isTalking = distance > 0.018;
+        var now = Date.now();
+
+        // Update immediately but with short debounce to prevent flicker
+        if (isTalking !== this._talkingState.isTalking) {
+            if (now - this._talkingState.lastChange > 150) {
+                this._talkingState.isTalking = isTalking;
+                this._talkingState.lastChange = now;
+            }
+        }
+
+        // Always show current state based on actual measurement
+        if (isTalking) {
+            this.updateMonitorStatus('talking', 'TALKING', 'good');
+        } else {
+            this.updateMonitorStatus('talking', 'SILENT', 'warning');
+        }
+    };
+
+    ProductionMonitorWidget.prototype.analyzeFocus = function(landmarks) {
+        if (!this._cvReady || typeof cv === 'undefined') {
+            this.updateMonitorStatus('focus', 'CV N/A', 'warning');
+            return;
+        }
+
+        var leftEye = landmarks[LANDMARKS.LEFT_EYE];
+        var rightEye = landmarks[LANDMARKS.RIGHT_EYE];
+        var nose = landmarks[LANDMARKS.NOSE_TIP];
+
+        if (!leftEye || !rightEye || !nose) {
+            this.updateMonitorStatus('focus', 'NO DATA', 'warning');
+            return;
+        }
+
+        try {
+            var source = this._media.video || this._media.imageCanvas;
+            if (!source) {
+                this.updateMonitorStatus('focus', 'NO SOURCE', 'warning');
+                return;
+            }
+
+            // Get dimensions
+            var w, h;
+            if (source.tagName === 'VIDEO') {
+                w = source.videoWidth;
+                h = source.videoHeight;
+            } else {
+                w = source.width;
+                h = source.height;
+            }
+
+            if (!w || !h || w < 40 || h < 40) {
+                this.updateMonitorStatus('focus', 'WAITING', 'warning');
+                return;
+            }
+
+            // Create temp canvas to capture video frame
+            if (!this._focusCanvas) {
+                this._focusCanvas = document.createElement('canvas');
+            }
+            this._focusCanvas.width = w;
+            this._focusCanvas.height = h;
+            var ctx = this._focusCanvas.getContext('2d');
+            ctx.drawImage(source, 0, 0, w, h);
+
+            // Sample region around face center
+            var centerX = ((leftEye.x + rightEye.x + nose.x) / 3) * w;
+            var centerY = ((leftEye.y + rightEye.y + nose.y) / 3) * h;
+            var size = 40;
+            var x = Math.max(0, Math.min(Math.floor(centerX - size/2), w - size));
+            var y = Math.max(0, Math.min(Math.floor(centerY - size/2), h - size));
+
+            var imgData = ctx.getImageData(x, y, size, size);
+            var mat = cv.matFromImageData(imgData);
+            var gray = new cv.Mat();
+            cv.cvtColor(mat, gray, cv.COLOR_RGBA2GRAY);
+            var lap = new cv.Mat();
+            cv.Laplacian(gray, lap, cv.CV_64F);
+            var mean = new cv.Mat();
+            var stdDev = new cv.Mat();
+            cv.meanStdDev(lap, mean, stdDev);
+            var variance = stdDev.doubleAt(0, 0);
+
+            mat.delete(); gray.delete(); lap.delete(); mean.delete(); stdDev.delete();
+
+            if (variance > 12) {
+                this.updateMonitorStatus('focus', 'SHARP', 'good');
+            } else if (variance > 6) {
+                this.updateMonitorStatus('focus', 'OK', 'warning');
+            } else {
+                this.updateMonitorStatus('focus', 'BLURRY', 'bad');
+            }
+        } catch (e) {
+            console.warn('Focus analysis error:', e);
+            this.updateMonitorStatus('focus', 'CV ERROR', 'warning');
+        }
+    };
+
+    ProductionMonitorWidget.prototype.analyzeLighting = function() {
+        var source = this._media ? this._media.video : null;
+        var imageCanvas = this._media ? this._media.imageCanvas : null;
+
+        // Determine source and dimensions
+        var w, h, drawSource;
+        if (source && source.tagName === 'VIDEO' && source.videoWidth > 0) {
+            w = source.videoWidth;
+            h = source.videoHeight;
+            drawSource = source;
+        } else if (imageCanvas && imageCanvas.width > 0) {
+            w = imageCanvas.width;
+            h = imageCanvas.height;
+            drawSource = imageCanvas;
+        } else {
+            this.updateMonitorStatus('lighting', 'N/A', 'disabled');
+            return;
+        }
+
+        try {
+            // Create/reuse temp canvas for analysis
+            if (!this._lightingCanvas) {
+                this._lightingCanvas = document.createElement('canvas');
+            }
+            this._lightingCanvas.width = w;
+            this._lightingCanvas.height = h;
+            var ctx = this._lightingCanvas.getContext('2d');
+            ctx.drawImage(drawSource, 0, 0, w, h);
+
+            var imgData = ctx.getImageData(0, 0, w, h);
+            var data = imgData.data;
+
+            var totalBrightness = 0;
+            var pixelCount = data.length / 4;
+            for (var i = 0; i < data.length; i += 4) {
+                // Standard luminance formula
+                totalBrightness += (0.299 * data[i] + 0.587 * data[i+1] + 0.114 * data[i+2]);
+            }
+            var avgBrightness = totalBrightness / pixelCount;
+
+            // Thresholds for 0-255 brightness scale
+            if (avgBrightness < 50) {
+                this.updateMonitorStatus('lighting', 'DARK', 'bad');
+            } else if (avgBrightness < 90) {
+                this.updateMonitorStatus('lighting', 'DIM', 'warning');
+            } else if (avgBrightness > 220) {
+                this.updateMonitorStatus('lighting', 'OVEREXPOSED', 'bad');
+            } else if (avgBrightness > 180) {
+                this.updateMonitorStatus('lighting', 'BRIGHT', 'warning');
+            } else {
+                this.updateMonitorStatus('lighting', 'GOOD', 'good');
+            }
+        } catch (e) {
+            console.warn('Lighting analysis error:', e);
+            this.updateMonitorStatus('lighting', 'ERROR', 'warning');
+        }
+    };
+
+    ProductionMonitorWidget.prototype.runMoonDreamAnalysis = function() {
+        var self = this;
+        var frame = this.getCurrentFrame();
+        if (!frame) return;
+
+        // Presence and Composition analysis using single /detect call
+        var needsDetect = this._monitors.presence.enabled || this._monitors.composition.enabled;
+        if (needsDetect) {
+            ApiClient.detect(frame, 'face').then(function(response) {
+                var objects = response.objects || [];
+
+                // Update Presence (from same API call)
+                if (self._monitors.presence.enabled) {
+                    if (objects.length > 0) {
+                        self.updateMonitorStatus('presence', 'PRESENT', 'good');
+                    } else {
+                        self.updateMonitorStatus('presence', 'ABSENT', 'bad');
+                    }
+                }
+
+                // Update Composition
+                if (self._monitors.composition.enabled) {
+                    if (objects.length === 0) {
+                        self.updateMonitorStatus('composition', 'NO FACE', 'bad');
+                        return;
+                    }
+
+                    var face = objects[0];
+                    var centerX = (face.x_min + face.x_max) / 2;
+                    var centerY = (face.y_min + face.y_max) / 2;
+                    var faceWidth = face.x_max - face.x_min;
+                    var faceHeight = face.y_max - face.y_min;
+
+                    // Analyze composition
+                    var issues = [];
+
+                    // Check framing (face size)
+                    if (faceWidth > 0.5 || faceHeight > 0.6) {
+                        issues.push('TOO CLOSE');
+                    } else if (faceWidth < 0.15 && faceHeight < 0.2) {
+                        issues.push('TOO FAR');
+                    }
+
+                    // Check position
+                    if (centerX < 0.3) issues.push('→ RIGHT');
+                    else if (centerX > 0.7) issues.push('← LEFT');
+                    if (centerY < 0.25) issues.push('↓ DOWN');
+                    else if (centerY > 0.75) issues.push('↑ UP');
+
+                    if (issues.length === 0) {
+                        self.updateMonitorStatus('composition', 'GOOD', 'good');
+                    } else {
+                        self.updateMonitorStatus('composition', issues.join(' '), 'bad');
+                    }
+
+                    // Draw composition overlay
+                    self.drawCompositionOverlay(face);
+                }
+            }).catch(function(err) {
+                if (self._monitors.presence.enabled) {
+                    self.updateMonitorStatus('presence', 'ERROR', 'warning');
+                }
+                if (self._monitors.composition.enabled) {
+                    self.updateMonitorStatus('composition', 'ERROR', 'warning');
+                }
+            });
+        }
+
+        // Scene context using /caption
+        if (this._monitors.sceneContext.enabled) {
+            ApiClient.caption(frame, 'normal').then(function(response) {
+                var caption = response.caption || 'No description';
+                self.updateMonitorStatus('sceneContext', 'UPDATED', 'good');
+                if (self._sceneText) {
+                    self._sceneText.textContent = caption;
+                }
+            }).catch(function(err) {
+                self.updateMonitorStatus('sceneContext', 'ERROR', 'warning');
+            });
+        }
+    };
+
+    ProductionMonitorWidget.prototype.drawCompositionOverlay = function(face) {
+        if (!this.overlayCanvas || !this.overlayCtx) return;
+
+        var ctx = this.overlayCtx;
+        var w = this.overlayCanvas.width;
+        var h = this.overlayCanvas.height;
+
+        // Clear
+        ctx.clearRect(0, 0, w, h);
+
+        // Draw rule of thirds grid
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.3)';
+        ctx.lineWidth = 1;
+
+        // Vertical lines
+        ctx.beginPath();
+        ctx.moveTo(w/3, 0); ctx.lineTo(w/3, h);
+        ctx.moveTo(2*w/3, 0); ctx.lineTo(2*w/3, h);
+        // Horizontal lines
+        ctx.moveTo(0, h/3); ctx.lineTo(w, h/3);
+        ctx.moveTo(0, 2*h/3); ctx.lineTo(w, 2*h/3);
+        ctx.stroke();
+
+        // Draw face bounding box
+        var x = face.x_min * w;
+        var y = face.y_min * h;
+        var bw = (face.x_max - face.x_min) * w;
+        var bh = (face.y_max - face.y_min) * h;
+
+        ctx.strokeStyle = CONFIG.colors.detect;
+        ctx.lineWidth = 2;
+        ctx.strokeRect(x, y, bw, bh);
+
+        // Draw center point
+        var cx = (face.x_min + face.x_max) / 2 * w;
+        var cy = (face.y_min + face.y_max) / 2 * h;
+        ctx.fillStyle = CONFIG.colors.detect;
+        ctx.beginPath();
+        ctx.arc(cx, cy, 5, 0, Math.PI * 2);
+        ctx.fill();
+    };
+
+    ProductionMonitorWidget.prototype.unmount = function() {
+        this.stopMonitoring();
+        WidgetBase.prototype.unmount.call(this);
+    };
+
+    // ============================================================
     // WIDGET REGISTRY
     // ============================================================
     var WidgetRegistry = {
@@ -2350,7 +3030,8 @@
         'smart-counter': SmartCounterWidget,
         'scene-analyzer': SceneAnalyzerWidget,
         'person-tracker': PersonTrackerWidget,
-        'zone-monitor': ZoneMonitorWidget
+        'zone-monitor': ZoneMonitorWidget,
+        'production-monitor': ProductionMonitorWidget
     };
 
     var WidgetList = [
@@ -2358,7 +3039,8 @@
         { id: 'smart-counter', label: 'Smart Counter', icon: '🔢' },
         { id: 'scene-analyzer', label: 'Scene Analyzer', icon: '🎬' },
         { id: 'person-tracker', label: 'Person Tracker', icon: '👤' },
-        { id: 'zone-monitor', label: 'Zone Monitor', icon: '🚧' }
+        { id: 'zone-monitor', label: 'Zone Monitor', icon: '🚧' },
+        { id: 'production-monitor', label: 'Production Monitor', icon: '🎥' }
     ];
 
     // ============================================================
