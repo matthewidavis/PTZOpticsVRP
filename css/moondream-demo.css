@@ -1,7 +1,65 @@
 /**
- * MoonDream x PTZOptics AI Demo Suite
- * PTZOptics Brand Theme
- * https://ptzoptics.com/
+ * ============================================================================
+ * PTZOptics Visual Reasoning Playground - Stylesheet
+ * ============================================================================
+ *
+ * Main stylesheet for the MoonDream AI demo suite.
+ * Implements PTZOptics brand theming with dark mode design.
+ *
+ * @author      PTZOptics / Matthew Davis
+ * @version     1.0.0
+ * @repository  https://github.com/matthewidavis/PTZOpticsVRP
+ *
+ * ============================================================================
+ * STRUCTURE
+ * ============================================================================
+ *
+ * 1. CSS CUSTOM PROPERTIES  - Design tokens (colors, spacing, fonts)
+ * 2. BASE RESET             - Box-sizing, font smoothing
+ * 3. LAYOUT                 - App container, grid system
+ * 4. HEADER                 - Top navigation bar
+ * 5. CARDS                  - Widget selection cards
+ * 6. BUTTONS                - Primary, secondary, small variants
+ * 7. FORMS                  - Inputs, selects, labels
+ * 8. VIDEO                  - Webcam container, overlays
+ * 9. MODALS                 - Widget modals, API key modal
+ * 10. WIDGETS               - Widget-specific layouts
+ * 11. STATUS                - Status indicators, alerts
+ * 12. TOAST                 - Toast notifications
+ * 13. PRODUCTION MONITOR    - Monitor cards, status grid
+ * 14. PTZ TRACKER           - PTZ-specific UI elements
+ * 15. ANIMATIONS            - Spinners, transitions
+ * 16. RESPONSIVE            - Media queries for mobile
+ *
+ * ============================================================================
+ * COLOR SYSTEM
+ * ============================================================================
+ *
+ * PTZOptics Brand:
+ * - Navy (#1a2b4a)      - Primary background
+ * - Blue (#0066cc)      - Primary actions, links
+ * - Accent (#00a0e3)    - Secondary highlights
+ *
+ * Status Colors:
+ * - Success (#22c55e)   - Good state, confirmations
+ * - Warning (#f59e0b)   - Caution, suboptimal state
+ * - Error (#ef4444)     - Problems, errors
+ * - Info (#00a0e3)      - Informational
+ *
+ * ============================================================================
+ * NAMING CONVENTION
+ * ============================================================================
+ *
+ * All classes prefixed with "moon-" to avoid conflicts.
+ * BEM-like structure: .moon-{block}__{element}--{modifier}
+ *
+ * Examples:
+ * - .moon-btn              - Block (button)
+ * - .moon-btn-primary      - Modifier (primary variant)
+ * - .moon-card-icon        - Element within card
+ * - .moon-widget-header    - Element within widget
+ *
+ * ============================================================================
  */
 
 /* ============================================================

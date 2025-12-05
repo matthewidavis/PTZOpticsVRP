@@ -1,13 +1,89 @@
 /**
- * MoonDream AI Demo Suite
- * Interactive demos showcasing MoonDream's vision AI capabilities
+ * ============================================================================
+ * PTZOptics Visual Reasoning Playground
+ * ============================================================================
  *
- * Demos:
- * 1. Universal Object Detector - Detect any object with bounding boxes
- * 2. Smart Counter - Count objects with visual point markers
- * 3. Scene Analyzer - Caption and Q&A for understanding scenes
- * 4. Person Tracker - Track people with bounding boxes
- * 5. Zone Monitor - User-defined zones with detection alerts
+ * A comprehensive interactive demonstration suite showcasing MoonDream's
+ * visual reasoning AI capabilities for video production applications.
+ *
+ * @author      PTZOptics / Matthew Davis
+ * @version     1.0.0
+ * @license     MIT
+ * @repository  https://github.com/matthewidavis/PTZOpticsVRP
+ * @demo        https://matthewidavis.github.io/PTZOpticsVRP/
+ *
+ * ============================================================================
+ * ARCHITECTURE OVERVIEW
+ * ============================================================================
+ *
+ * This application follows a modular widget-based architecture:
+ *
+ * ┌─────────────────────────────────────────────────────────────────────────┐
+ * │                              MoonDemo                                    │
+ * │  (Global namespace exposed to window, entry point for initialization)   │
+ * └─────────────────────────────────────────────────────────────────────────┘
+ *                                    │
+ *                                    ▼
+ * ┌─────────────────────────────────────────────────────────────────────────┐
+ * │                             Dashboard                                    │
+ * │  (Main UI controller - handles navigation, modals, card grid)           │
+ * └─────────────────────────────────────────────────────────────────────────┘
+ *                                    │
+ *                    ┌───────────────┼───────────────┐
+ *                    ▼               ▼               ▼
+ *              ┌──────────┐   ┌──────────┐   ┌──────────┐
+ *              │ Widget 1 │   │ Widget 2 │   │ Widget N │
+ *              │ (extends │   │ (extends │   │ (extends │
+ *              │ WidgetBa │   │ WidgetBa │   │ WidgetBa │
+ *              └──────────┘   └──────────┘   └──────────┘
+ *
+ * ============================================================================
+ * MODULE BREAKDOWN
+ * ============================================================================
+ *
+ * 1. CONFIG          - Global configuration constants
+ * 2. Utils           - DOM utilities, storage, clipboard helpers
+ * 3. CanvasUtils     - Drawing utilities for bounding boxes, points, zones
+ * 4. Strings         - UI text strings for easy localization
+ * 5. ApiClient       - MoonDream API communication layer
+ * 6. MediaCapture    - Webcam/camera and image file handling
+ * 7. WidgetBase      - Base class all widgets inherit from
+ * 8. Widgets         - Individual feature implementations:
+ *    - ObjectDetectorWidget   : Zero-shot object detection
+ *    - SmartCounterWidget     : Object counting with point markers
+ *    - SceneAnalyzerWidget    : Image captioning and visual Q&A
+ *    - PersonTrackerWidget    : People/face detection
+ *    - ZoneMonitorWidget      : Custom zone monitoring with alerts
+ *    - ProductionMonitorWidget: Video production quality dashboard
+ *    - PTZTrackerWidget       : PTZ camera auto-tracking
+ * 9. WidgetRegistry  - Maps widget IDs to their constructors
+ * 10. WidgetList     - Metadata for UI card display
+ * 11. WidgetInfo     - Help content for each widget
+ * 12. Dashboard      - Main application controller
+ * 13. MoonDemo       - Public API exposed to window
+ *
+ * ============================================================================
+ * DATA FLOW
+ * ============================================================================
+ *
+ * 1. User starts webcam → MediaCapture.startWebcam() → stream to <video>
+ * 2. User clicks action → Widget captures frame → MediaCapture.captureFrame()
+ * 3. Frame sent to API → ApiClient._request() → MoonDream cloud
+ * 4. Results returned → Widget.display*() → CanvasUtils draws on overlay
+ *
+ * ============================================================================
+ * WIDGETS (7 Total)
+ * ============================================================================
+ *
+ * 1. Object Detector   - Detect any object by name with bounding boxes
+ * 2. Smart Counter     - Count objects with numbered point markers
+ * 3. Scene Analyzer    - AI captions and visual question answering
+ * 4. Person Tracker    - Track faces, bodies, or hands
+ * 5. Zone Monitor      - Draw custom zones, alert when objects enter
+ * 6. Production Monitor- Real-time video quality analysis dashboard
+ * 7. PTZ Auto-Tracker  - AI-powered PTZ camera tracking control
+ *
+ * ============================================================================
  */
 (function(global) {
     'use strict';
@@ -15,30 +91,67 @@
     // ============================================================
     // CONFIGURATION
     // ============================================================
+    /**
+     * Global configuration object for the application.
+     * Modify these values to customize behavior.
+     *
+     * @property {string} apiBaseUrl     - MoonDream API endpoint base URL
+     * @property {string} apiKey         - User's API key (set at runtime)
+     * @property {number} jpegQuality    - Quality for frame capture (0-1)
+     * @property {number} requestTimeout - API request timeout in milliseconds
+     * @property {number} maxVideoSizeMB - Maximum video file size for upload
+     * @property {string} storageKey     - sessionStorage key for API key
+     * @property {object} colors         - Color palette for UI elements
+     */
     var CONFIG = {
-        apiBaseUrl: 'https://api.moondream.ai/v1',
-        apiKey: null,
-        jpegQuality: 0.85,
-        requestTimeout: 30000,
-        maxVideoSizeMB: 200,
-        storageKey: 'moondream_api_key',
+        apiBaseUrl: 'https://api.moondream.ai/v1',  // MoonDream API endpoint
+        apiKey: null,                                // Set by user via UI
+        jpegQuality: 0.85,                           // Balance quality vs size
+        requestTimeout: 30000,                       // 30 second timeout
+        maxVideoSizeMB: 200,                         // Max upload size
+        storageKey: 'moondream_api_key',             // sessionStorage key
         colors: {
-            primary: '#6366f1',
-            secondary: '#8b5cf6',
-            success: '#10b981',
-            warning: '#f59e0b',
-            error: '#ef4444',
-            detect: '#00ff88',
-            point: '#ff6b6b',
-            zone: '#ffd93d',
-            person: '#6bcfff'
+            primary: '#6366f1',      // Main brand color (indigo)
+            secondary: '#8b5cf6',    // Secondary actions (purple)
+            success: '#10b981',      // Success states (green)
+            warning: '#f59e0b',      // Warning states (amber)
+            error: '#ef4444',        // Error states (red)
+            detect: '#00ff88',       // Object detection boxes (bright green)
+            point: '#ff6b6b',        // Point markers (coral)
+            zone: '#ffd93d',         // Zone boundaries (yellow)
+            person: '#6bcfff'        // Person tracking (light blue)
         }
     };
 
     // ============================================================
     // UTILITIES
     // ============================================================
+    /**
+     * Utils - General utility functions for DOM manipulation and helpers.
+     *
+     * This module provides common functionality used throughout the application
+     * including element creation, security (HTML escaping), clipboard operations,
+     * and API key storage management.
+     */
     var Utils = {
+        /**
+         * Create a DOM element with optional class and attributes.
+         * This is the primary method for building UI elements programmatically.
+         *
+         * @param {string} tag       - HTML tag name (e.g., 'div', 'button')
+         * @param {string} className - CSS class(es) to apply
+         * @param {object} attrs     - Key-value pairs for attributes
+         *                             Special keys: 'textContent', 'innerHTML'
+         * @returns {HTMLElement}    - The created DOM element
+         *
+         * @example
+         * // Create a button with class and text
+         * Utils.createElement('button', 'moon-btn', { textContent: 'Click Me' });
+         *
+         * @example
+         * // Create an input with multiple attributes
+         * Utils.createElement('input', 'moon-input', { type: 'text', placeholder: 'Enter text...' });
+         */
         createElement: function(tag, className, attrs) {
             var el = document.createElement(tag);
             if (className) el.className = className;
@@ -56,20 +169,47 @@
             return el;
         },
 
+        /**
+         * Generate a unique ID string for DOM elements.
+         * Uses random base-36 characters for uniqueness.
+         *
+         * @param {string} prefix - Optional prefix (default: 'moon')
+         * @returns {string}      - Unique ID like 'moon-x7k2m9p4q'
+         */
         uniqueId: function(prefix) {
             return (prefix || 'moon') + '-' + Math.random().toString(36).substr(2, 9);
         },
 
+        /**
+         * Escape HTML special characters to prevent XSS attacks.
+         * IMPORTANT: Always use this when displaying user-generated content!
+         *
+         * @param {string} str - Raw string that may contain HTML
+         * @returns {string}   - Safe string with escaped characters
+         *
+         * @example
+         * Utils.escapeHTML('<script>alert("xss")</script>');
+         * // Returns: '&lt;script&gt;alert("xss")&lt;/script&gt;'
+         */
         escapeHTML: function(str) {
             var div = document.createElement('div');
             div.textContent = str;
             return div.innerHTML;
         },
 
+        /**
+         * Copy text to the system clipboard.
+         * Uses modern Clipboard API with fallback for older browsers.
+         *
+         * @param {string} text - Text to copy
+         * @returns {Promise}   - Resolves when copy completes
+         */
         copyToClipboard: function(text) {
+            // Modern Clipboard API (preferred)
             if (navigator.clipboard && navigator.clipboard.writeText) {
                 return navigator.clipboard.writeText(text);
             }
+            // Fallback for older browsers using hidden textarea
             var textarea = document.createElement('textarea');
             textarea.value = text;
             textarea.style.position = 'fixed';
@@ -81,6 +221,13 @@
             return Promise.resolve();
         },
 
+        /**
+         * Store the API key in sessionStorage.
+         * Using sessionStorage (not localStorage) ensures the key is cleared
+         * when the browser tab is closed for better security.
+         *
+         * @param {string|null} key - API key to store, or null to remove
+         */
         storeApiKey: function(key) {
             try {
                 if (key) {
@@ -88,9 +235,16 @@
                 } else {
                     sessionStorage.removeItem(CONFIG.storageKey);
                 }
-            } catch (e) {}
+            } catch (e) {
+                // sessionStorage may be disabled in some browsers/modes
+            }
         },
 
+        /**
+         * Retrieve the stored API key from sessionStorage.
+         *
+         * @returns {string|null} - The stored API key or null if not found
+         */
         getStoredApiKey: function() {
             try {
                 return sessionStorage.getItem(CONFIG.storageKey);
@@ -99,7 +253,13 @@
             }
         },
 
-        // Color utilities for multiple detections
+        /**
+         * Get a color from the palette for visual variety.
+         * Colors cycle through the array for multiple detections.
+         *
+         * @param {number} index - Index to select color (wraps around)
+         * @returns {string}     - Hex color code
+         */
         getColor: function(index) {
             var colors = ['#00ff88', '#ff6b6b', '#6bcfff', '#ffd93d', '#ff9ff3', '#54a0ff', '#5f27cd', '#00d2d3'];
             return colors[index % colors.length];
@@ -109,9 +269,29 @@
     // ============================================================
     // CANVAS DRAWING UTILITIES
     // ============================================================
+    /**
+     * CanvasUtils - Drawing utilities for visualization overlays.
+     *
+     * All detection results are drawn on a transparent canvas overlay that sits
+     * on top of the video element. This allows real-time visualization without
+     * modifying the actual video stream.
+     *
+     * Coordinate System:
+     * - MoonDream API returns normalized coordinates (0.0 to 1.0)
+     * - These are converted to pixel coordinates using canvas dimensions
+     * - (0,0) is top-left, (1,1) is bottom-right
+     */
     var CanvasUtils = {
         /**
-         * Draw bounding box on canvas
+         * Draw a bounding box rectangle with optional label.
+         * Used by: Object Detector, Person Tracker, PTZ Tracker
+         *
+         * @param {CanvasRenderingContext2D} ctx - Canvas 2D context
+         * @param {object} box          - Box coordinates {x_min, y_min, x_max, y_max} (0-1 normalized)
+         * @param {string} color        - Stroke/fill color (hex)
+         * @param {string} label        - Optional text label to display above box
+         * @param {number} canvasWidth  - Canvas width in pixels
+         * @param {number} canvasHeight - Canvas height in pixels
          */
         drawBoundingBox: function(ctx, box, color, label, canvasWidth, canvasHeight) {
             var x = box.x_min * canvasWidth;
@@ -138,7 +318,15 @@
         },
 
         /**
-         * Draw point marker on canvas
+         * Draw a numbered point marker (filled circle with number).
+         * Used by: Smart Counter
+         *
+         * @param {CanvasRenderingContext2D} ctx - Canvas 2D context
+         * @param {object} point        - Point coordinates {x, y} (0-1 normalized)
+         * @param {string} color        - Fill color (hex)
+         * @param {number} index        - Zero-based index for numbering display
+         * @param {number} canvasWidth  - Canvas width in pixels
+         * @param {number} canvasHeight - Canvas height in pixels
          */
         drawPoint: function(ctx, point, color, index, canvasWidth, canvasHeight) {
             var x = point.x * canvasWidth;
@@ -170,7 +358,14 @@
         },
 
         /**
-         * Draw zone polygon on canvas
+         * Draw a polygon zone with semi-transparent fill.
+         * Used by: Zone Monitor for defining monitoring areas
+         *
+         * @param {CanvasRenderingContext2D} ctx - Canvas 2D context
+         * @param {Array} points  - Array of {x, y} pixel coordinates
+         * @param {string} color  - Base color (hex) - transparency added automatically
+         * @param {string} label  - Optional label to display at zone center
+         * @param {boolean} isActive - Whether zone is currently triggered (more opaque)
          */
         drawZone: function(ctx, points, color, label, isActive) {
             if (points.length < 2) return;
@@ -207,7 +402,12 @@
         },
 
         /**
-         * Check if a point is inside a polygon
+         * Check if a point is inside a polygon using ray casting algorithm.
+         * Used by: Zone Monitor to determine if detected objects are inside zones
+         *
+         * @param {object} point   - Point to test {x, y}
+         * @param {Array} polygon  - Array of polygon vertices {x, y}
+         * @returns {boolean}      - True if point is inside polygon
          */
         pointInPolygon: function(point, polygon) {
             var x = point.x, y = point.y;
@@ -223,7 +423,11 @@
         },
 
         /**
-         * Clear canvas
+         * Clear the entire canvas (remove all drawings).
+         *
+         * @param {CanvasRenderingContext2D} ctx - Canvas 2D context
+         * @param {number} width  - Canvas width
+         * @param {number} height - Canvas height
          */
         clear: function(ctx, width, height) {
             ctx.clearRect(0, 0, width, height);
@@ -233,11 +437,40 @@
     // ============================================================
     // API CLIENT
     // ============================================================
+    /**
+     * ApiClient - MoonDream API communication layer.
+     *
+     * Handles all HTTP requests to the MoonDream cloud API.
+     * API documentation: https://docs.moondream.ai
+     *
+     * Authentication:
+     * - API key is sent via 'X-Moondream-Auth' header
+     * - Key is stored in CONFIG.apiKey at runtime
+     *
+     * Endpoints used:
+     * - /query   : Visual question answering
+     * - /detect  : Object detection with bounding boxes
+     * - /point   : Object location with point coordinates
+     * - /caption : Image description generation
+     */
     var ApiClient = {
+        /**
+         * Check if an API key has been configured.
+         * @returns {boolean} - True if API key is set
+         */
         hasApiKey: function() {
             return !!CONFIG.apiKey;
         },
 
+        /**
+         * Internal method to make API requests.
+         * All public methods use this for consistent error handling.
+         *
+         * @param {string} endpoint - API endpoint path (e.g., '/detect')
+         * @param {object} body     - Request body to send as JSON
+         * @returns {Promise}       - Resolves with parsed JSON response
+         * @private
+         */
         _request: function(endpoint, body) {
             return new Promise(function(resolve, reject) {
                 if (!CONFIG.apiKey) {
@@ -274,7 +507,16 @@
         },
 
         /**
-         * Query - Visual Q&A
+         * Visual Question Answering - Ask questions about an image.
+         * Used by: Scene Analyzer
+         *
+         * @param {string} imageData - Base64 data URL of the image
+         * @param {string} question  - Natural language question about the image
+         * @returns {Promise}        - Resolves with {answer: string}
+         *
+         * @example
+         * ApiClient.query(frame, "How many people are in this image?")
+         *   .then(response => console.log(response.answer));
          */
         query: function(imageData, question) {
             return this._request('/query', {
@@ -284,7 +526,16 @@
         },
 
         /**
-         * Detect - Object detection with bounding boxes
+         * Object Detection - Find objects and return bounding boxes.
+         * Used by: Object Detector, Person Tracker, Zone Monitor, PTZ Tracker
+         *
+         * @param {string} imageData  - Base64 data URL of the image
+         * @param {string} objectName - What to detect (e.g., "person", "car", "face")
+         * @returns {Promise}         - Resolves with {objects: [{x_min, y_min, x_max, y_max}, ...]}
+         *
+         * @example
+         * ApiClient.detect(frame, "person")
+         *   .then(response => response.objects.forEach(drawBox));
          */
         detect: function(imageData, objectName) {
             return this._request('/detect', {
@@ -294,7 +545,16 @@
         },
 
         /**
-         * Point - Get coordinates of objects
+         * Point Detection - Find objects and return center point coordinates.
+         * Used by: Smart Counter
+         *
+         * @param {string} imageData  - Base64 data URL of the image
+         * @param {string} objectName - What to count (e.g., "person", "chair")
+         * @returns {Promise}         - Resolves with {points: [{x, y}, ...]}
+         *
+         * @example
+         * ApiClient.point(frame, "chair")
+         *   .then(response => console.log("Found " + response.points.length + " chairs"));
          */
         point: function(imageData, objectName) {
             return this._request('/point', {
@@ -304,7 +564,16 @@
         },
 
         /**
-         * Caption - Generate image description
+         * Image Captioning - Generate a natural language description.
+         * Used by: Scene Analyzer, Production Monitor
+         *
+         * @param {string} imageData - Base64 data URL of the image
+         * @param {string} length    - Caption length: 'short', 'normal', or 'long'
+         * @returns {Promise}        - Resolves with {caption: string}
+         *
+         * @example
+         * ApiClient.caption(frame, "normal")
+         *   .then(response => console.log(response.caption));
          */
         caption: function(imageData, length) {
             return this._request('/caption', {
@@ -318,6 +587,23 @@
     // ============================================================
     // MEDIA CAPTURE
     // ============================================================
+    /**
+     * MediaCapture - Webcam and image file handling.
+     *
+     * Manages video stream from user's camera and provides frame capture
+     * functionality for sending to the API.
+     *
+     * Features:
+     * - Camera enumeration and selection
+     * - Resolution detection and switching
+     * - Frame capture to base64 data URL
+     * - Image file loading
+     *
+     * Browser APIs used:
+     * - navigator.mediaDevices.getUserMedia() - Access camera
+     * - navigator.mediaDevices.enumerateDevices() - List cameras
+     * - HTMLCanvasElement.toDataURL() - Capture frames
+     */
     var MediaCapture = {
         stream: null,
         videoElement: null,
@@ -544,6 +830,20 @@
     // ============================================================
     // STRINGS & HELP TEXT
     // ============================================================
+    /**
+     * Strings - Localized UI text and messages.
+     *
+     * All user-facing text is centralized here for:
+     * - Easy localization/translation
+     * - Consistent messaging across widgets
+     * - Simple updates without code changes
+     *
+     * Categories:
+     * - common: Shared button labels and actions
+     * - errors: Error messages with user-friendly explanations
+     * - help: Helpful tips and hints
+     * - welcome: Onboarding text
+     */
     var Strings = {
         common: {
             startWebcam: 'Start Webcam',
@@ -598,6 +898,20 @@
     // ============================================================
     // ERROR HELPER - Friendly error messages
     // ============================================================
+    /**
+     * ErrorHelper - Transforms technical errors into user-friendly messages.
+     *
+     * This module provides two key functions:
+     * - getFriendlyMessage(): Converts error objects to readable text
+     * - getRecoveryAction(): Suggests actions users can take to resolve issues
+     *
+     * Error categories handled:
+     * - API key issues (invalid, missing)
+     * - Network problems (connection, timeout)
+     * - Rate limiting (429 errors)
+     * - Camera permissions
+     * - File upload errors
+     */
     var ErrorHelper = {
         getFriendlyMessage: function(error) {
             var msg = error.message || error.toString();
@@ -651,6 +965,20 @@
     // ============================================================
     // API KEY MODAL - Enhanced with validation and guidance
     // ============================================================
+    /**
+     * ApiKeyModal - Modal dialog for API key entry and validation.
+     *
+     * This modal handles the critical first-time setup experience:
+     * 1. Shows step-by-step instructions for obtaining a key
+     * 2. Validates the key format before accepting
+     * 3. Tests the key against the API before storing
+     * 4. Provides clear error feedback for invalid keys
+     *
+     * Security:
+     * - Key input is masked by default (password field)
+     * - Toggle to show/hide for verification
+     * - Key stored in sessionStorage (cleared on tab close)
+     */
     var ApiKeyModal = {
         modal: null,
         onSuccess: null,
@@ -817,6 +1145,45 @@
     // ============================================================
     // WIDGET BASE
     // ============================================================
+    /**
+     * WidgetBase - Base class that all widget modules extend.
+     *
+     * This class provides the foundational functionality shared by all 7 widgets:
+     * - Lifecycle management (mount, unmount, render)
+     * - Error handling with friendly messages and recovery actions
+     * - Toast notifications for success/error feedback
+     * - Media section creation (video, canvas, controls)
+     * - Overlay canvas for drawing detections
+     * - Continuous detection mode support
+     *
+     * INHERITANCE PATTERN:
+     * Each widget inherits from WidgetBase using prototype chain:
+     *   function MyWidget() { WidgetBase.call(this, id, label, icon, desc); }
+     *   MyWidget.prototype = Object.create(WidgetBase.prototype);
+     *   MyWidget.prototype.render = function() { ... };
+     *
+     * LIFECYCLE:
+     * 1. Widget instantiated by Dashboard when user clicks card
+     * 2. mount() called with root element → clears content, sets classes
+     * 3. render() called → widget builds its specific UI
+     * 4. User interacts → widget handles detection/analysis
+     * 5. unmount() called when modal closes → cleanup, stop webcam
+     *
+     * KEY PROPERTIES:
+     * @property {string} id          - Unique identifier (e.g., 'object-detector')
+     * @property {string} label       - Display name (e.g., 'Object Detector')
+     * @property {string} icon        - Emoji icon for UI (e.g., '🔍')
+     * @property {string} description - Short description for card/header
+     * @property {HTMLElement} rootEl - Root DOM element for widget content
+     * @property {HTMLCanvasElement} overlayCanvas - Canvas for drawing detections
+     * @property {CanvasRenderingContext2D} overlayCtx - 2D context for drawing
+     *
+     * @constructor
+     * @param {string} id          - Widget unique identifier
+     * @param {string} label       - Widget display name
+     * @param {string} icon        - Widget icon (emoji)
+     * @param {string} description - Widget description
+     */
     function WidgetBase(id, label, icon, description) {
         this.id = id;
         this.label = label;
@@ -828,6 +1195,13 @@
         this._continuousInterval = null;
     }
 
+    /**
+     * Mount the widget into a DOM element.
+     * Called by Dashboard when opening a widget modal.
+     *
+     * @param {HTMLElement} rootEl - Container element to render into
+     * @param {object} context     - Dashboard context with shared methods
+     */
     WidgetBase.prototype.mount = function(rootEl, context) {
         this.rootEl = rootEl;
         this.context = context;
@@ -838,6 +1212,11 @@
         this.render();
     };
 
+    /**
+     * Cleanup and remove the widget.
+     * Called by Dashboard when closing the modal.
+     * Stops webcam, clears intervals, removes DOM content.
+     */
     WidgetBase.prototype.unmount = function() {
         this.stopContinuous();
         MediaCapture.stopWebcam();
@@ -845,8 +1224,21 @@
         this.rootEl = null;
     };
 
+    /**
+     * Render the widget UI. Override in subclasses.
+     * This is where each widget builds its specific interface.
+     * @abstract
+     */
     WidgetBase.prototype.render = function() {};
 
+    /**
+     * Display an error to the user.
+     * Critical errors (API key, permissions) show inline banners with recovery actions.
+     * Non-critical errors show as toast notifications.
+     *
+     * @param {string} message - Error message to display
+     * @param {Error} error    - Optional error object for smart message conversion
+     */
     WidgetBase.prototype.showError = function(message, error) {
         var self = this;
         var friendlyMessage = error ? ErrorHelper.getFriendlyMessage(error) : message;
@@ -944,11 +1336,17 @@
         };
     };
 
+    /** Hide any visible error banner. */
     WidgetBase.prototype.hideError = function() {
         var errorEl = this.rootEl.querySelector('.moon-error-banner');
         if (errorEl) errorEl.style.display = 'none';
     };
 
+    /**
+     * Show a toast notification that auto-dismisses.
+     * @param {string} message - Message to display
+     * @param {string} type    - 'info', 'success', or 'error'
+     */
     WidgetBase.prototype.showToast = function(message, type) {
         type = type || 'info';
         var toast = Utils.createElement('div', 'moon-toast moon-toast-' + type);
@@ -974,10 +1372,18 @@
         }, 3000);
     };
 
+    /** Show a success toast notification. */
     WidgetBase.prototype.showSuccess = function(message) {
         this.showToast(message, 'success');
     };
 
+    /**
+     * Toggle loading state on the primary action button.
+     * Shows spinner and custom message while processing.
+     *
+     * @param {boolean} isLoading - True to show loading, false to restore
+     * @param {string} message    - Optional loading message (default: 'Processing...')
+     */
     WidgetBase.prototype.setLoading = function(isLoading, message) {
         var btn = this.rootEl.querySelector('.moon-btn-action');
         if (btn) {
@@ -991,6 +1397,12 @@
         }
     };
 
+    /**
+     * Ensure API key is set before executing callback.
+     * Shows API key modal if not configured, then calls callback.
+     *
+     * @param {function} callback - Function to call once API key is available
+     */
     WidgetBase.prototype.ensureApiKey = function(callback) {
         if (ApiClient.hasApiKey()) {
             callback();
@@ -999,6 +1411,23 @@
         }
     };
 
+    /**
+     * Create the standard media section with video, canvas, and controls.
+     * This is the core UI component used by most widgets.
+     *
+     * Creates:
+     * - Video element for webcam feed
+     * - Overlay canvas for drawing detections
+     * - Image canvas for uploaded images
+     * - Placeholder when no media active
+     * - Camera selector dropdown (shown when multiple cameras)
+     * - Resolution selector dropdown
+     * - Start/Stop Webcam button
+     * - Upload Image button with file input
+     *
+     * @param {object} options - Configuration options (reserved for future use)
+     * @returns {HTMLElement}  - The media section container element
+     */
     WidgetBase.prototype.createMediaSection = function(options) {
         var self = this;
         options = options || {};
@@ -1260,6 +1689,12 @@
         return container;
     };
 
+    /**
+     * Synchronize overlay canvas size with the active video/image source.
+     * Called after webcam start, resolution change, or image upload.
+     * Ensures detection boxes are drawn at correct positions.
+     * @private
+     */
     WidgetBase.prototype._syncOverlaySize = function() {
         if (!this._media) return;
         var video = this._media.video;
@@ -1299,6 +1734,12 @@
         }
     };
 
+    /**
+     * Get the current frame from webcam or uploaded image.
+     * Returns base64 data URL ready for API calls.
+     *
+     * @returns {string|null} - Base64 data URL or null if no media
+     */
     WidgetBase.prototype.getCurrentFrame = function() {
         if (!this._media) return null;
 
@@ -1314,12 +1755,21 @@
         return null;
     };
 
+    /** Clear all drawings from the overlay canvas. */
     WidgetBase.prototype.clearOverlay = function() {
         if (this.overlayCtx && this.overlayCanvas) {
             CanvasUtils.clear(this.overlayCtx, this.overlayCanvas.width, this.overlayCanvas.height);
         }
     };
 
+    /**
+     * Start continuous detection mode.
+     * Repeatedly calls callback at specified interval while webcam is active.
+     * Used for live monitoring features.
+     *
+     * @param {function} callback - Detection function to call
+     * @param {number} interval   - Milliseconds between calls (default: 2000)
+     */
     WidgetBase.prototype.startContinuous = function(callback, interval) {
         var self = this;
         this.stopContinuous();
@@ -1330,6 +1780,7 @@
         }, interval || 2000);
     };
 
+    /** Stop continuous detection mode and clear interval. */
     WidgetBase.prototype.stopContinuous = function() {
         if (this._continuousInterval) {
             clearInterval(this._continuousInterval);
@@ -1340,6 +1791,22 @@
     // ============================================================
     // WIDGET 1: UNIVERSAL OBJECT DETECTOR
     // ============================================================
+    /**
+     * ObjectDetectorWidget - Zero-shot object detection with bounding boxes.
+     *
+     * This widget lets users detect any object by typing its name.
+     * No pre-training required - just describe what you want to find.
+     *
+     * Features:
+     * - Free-form text input for object name
+     * - Bounding box visualization with color-coded results
+     * - Single-shot and continuous detection modes
+     * - Works with webcam or uploaded images
+     *
+     * API used: /detect endpoint
+     *
+     * @extends WidgetBase
+     */
     function ObjectDetectorWidget() {
         WidgetBase.call(this,
             'object-detector',
@@ -1547,6 +2014,22 @@
     // ============================================================
     // WIDGET 2: SMART COUNTER
     // ============================================================
+    /**
+     * SmartCounterWidget - Count objects with numbered point markers.
+     *
+     * Unlike simple counting, this widget shows exactly WHERE each
+     * counted item is located with visual markers.
+     *
+     * Features:
+     * - Numbered point markers on each detected item
+     * - Total count displayed prominently
+     * - Single-shot and continuous counting modes
+     * - Great for verification (see what was counted)
+     *
+     * API used: /point endpoint
+     *
+     * @extends WidgetBase
+     */
     function SmartCounterWidget() {
         WidgetBase.call(this,
             'smart-counter',
@@ -1720,6 +2203,22 @@
     // ============================================================
     // WIDGET 3: SCENE ANALYZER
     // ============================================================
+    /**
+     * SceneAnalyzerWidget - AI image captioning and visual Q&A.
+     *
+     * This widget showcases MoonDream's visual reasoning capabilities
+     * by generating natural language descriptions and answering questions.
+     *
+     * Features:
+     * - Auto-generate image captions (short/normal/long)
+     * - Ask free-form questions about the scene
+     * - Conversation history display
+     * - Copy answers to clipboard
+     *
+     * API used: /caption and /query endpoints
+     *
+     * @extends WidgetBase
+     */
     function SceneAnalyzerWidget() {
         WidgetBase.call(this,
             'scene-analyzer',
@@ -1911,6 +2410,22 @@
     // ============================================================
     // WIDGET 4: PERSON TRACKER
     // ============================================================
+    /**
+     * PersonTrackerWidget - Detect and track people with bounding boxes.
+     *
+     * Specialized detection for people with multiple detection modes
+     * for different use cases.
+     *
+     * Features:
+     * - Detection modes: All People, Face Only, Hands
+     * - Color-coded bounding boxes
+     * - Single-shot and continuous tracking modes
+     * - Person count display
+     *
+     * API used: /detect endpoint with mode-specific queries
+     *
+     * @extends WidgetBase
+     */
     function PersonTrackerWidget() {
         WidgetBase.call(this,
             'person-tracker',
@@ -2106,6 +2621,27 @@
     // ============================================================
     // WIDGET 5: ZONE MONITOR
     // ============================================================
+    /**
+     * ZoneMonitorWidget - Custom zone drawing with entry detection.
+     *
+     * Draw polygonal zones on the video feed and monitor when
+     * specified objects enter those zones. Triggers alerts.
+     *
+     * Features:
+     * - Click-to-draw polygon zones
+     * - Multiple zone support with different colors
+     * - Object entry detection (configurable target)
+     * - Visual alerts when objects enter zones
+     * - Zone management (clear, finish)
+     *
+     * Algorithm:
+     * - Uses ray-casting point-in-polygon test
+     * - Checks if detection center point is inside zone polygon
+     *
+     * API used: /detect endpoint
+     *
+     * @extends WidgetBase
+     */
     function ZoneMonitorWidget() {
         WidgetBase.call(this,
             'zone-monitor',
@@ -2560,6 +3096,39 @@
     // ============================================================
     // WIDGET 6: PRODUCTION MONITOR (ShotSquire-style)
     // ============================================================
+    /**
+     * ProductionMonitorWidget - Comprehensive video production quality dashboard.
+     *
+     * Combines traditional computer vision (MediaPipe, OpenCV) with MoonDream's
+     * visual reasoning for a hybrid approach to shot quality analysis.
+     *
+     * MONITORS (7 total):
+     * | Monitor     | Source     | What It Checks                    |
+     * |-------------|------------|-----------------------------------|
+     * | Orientation | MediaPipe  | Is subject facing camera?         |
+     * | Talking     | MediaPipe  | Is subject speaking?              |
+     * | Focus       | Canvas     | Is image sharp (Laplacian)?       |
+     * | Lighting    | Canvas     | Is scene properly exposed?        |
+     * | Presence    | MoonDream  | Is a face detected in frame?      |
+     * | Composition | MoonDream  | Is subject well-framed?           |
+     * | Scene       | MoonDream  | AI description of what's happening|
+     *
+     * Status Colors:
+     * - Green (good): Optimal conditions
+     * - Yellow (warning): Suboptimal but acceptable
+     * - Red (problem): Needs attention
+     *
+     * Features:
+     * - Real-time status cards with visual indicators
+     * - Click to toggle individual monitors
+     * - Scene description with AI analysis
+     * - Adjustable monitoring interval
+     *
+     * External libraries:
+     * - MediaPipe Face Mesh (loaded dynamically)
+     *
+     * @extends WidgetBase
+     */
     function ProductionMonitorWidget() {
         WidgetBase.call(this,
             'production-monitor',
@@ -3238,6 +3807,44 @@
     // ============================================================
     // WIDGET 7: PTZ AUTO-TRACKER
     // ============================================================
+    /**
+     * PTZTrackerWidget - AI-powered PTZ camera auto-tracking.
+     *
+     * Uses MoonDream to detect any specified object and automatically
+     * sends pan/tilt commands to a PTZ camera to keep the object centered.
+     *
+     * TRACKING ALGORITHM:
+     * 1. Capture frame from webcam (can be PTZ camera's NDI feed)
+     * 2. Send to MoonDream /detect endpoint for target object
+     * 3. Calculate center point of detected object
+     * 4. Compare to frame center, determine offset
+     * 5. If outside deadzone, send PTZ command to move toward center
+     * 6. Repeat at configured interval
+     *
+     * PTZ CONTROL:
+     * - Sends HTTP CGI commands compatible with PTZOptics cameras
+     * - URL format: http://{IP}/cgi-bin/ptzctrl.cgi?ptzcmd&{direction}&{speed}
+     * - Simulation mode available for testing without camera
+     *
+     * PRESETS:
+     * | Preset   | Rate    | Speed | Deadzone | Use Case         |
+     * |----------|---------|-------|----------|------------------|
+     * | Smooth   | 0.5/sec | 3     | 12%      | Broadcast        |
+     * | Balanced | 1.0/sec | 5     | 5%       | General use      |
+     * | Precise  | 1.5/sec | 6     | 2%       | Presentations    |
+     * | Fast     | 2.0/sec | 8     | 8%       | Sports/Action    |
+     *
+     * Features:
+     * - Configurable target object (person, face, hand, ball, etc.)
+     * - Adjustable detection rate and movement speed
+     * - Visual overlay showing target position and movement direction
+     * - Real-time status display
+     * - Simulation mode for testing
+     *
+     * API used: /detect endpoint
+     *
+     * @extends WidgetBase
+     */
     function PTZTrackerWidget() {
         WidgetBase.call(this,
             'ptz-tracker',
@@ -3734,6 +4341,16 @@
     // ============================================================
     // WIDGET REGISTRY
     // ============================================================
+    /**
+     * WidgetRegistry - Maps widget IDs to their constructor functions.
+     *
+     * Used by Dashboard to instantiate widgets when user clicks a card.
+     * To add a new widget:
+     * 1. Create the widget class extending WidgetBase
+     * 2. Add entry here: 'widget-id': WidgetClassName
+     * 3. Add to WidgetList for card display
+     * 4. Add to WidgetInfo for help content
+     */
     var WidgetRegistry = {
         'object-detector': ObjectDetectorWidget,
         'smart-counter': SmartCounterWidget,
@@ -3744,6 +4361,15 @@
         'ptz-tracker': PTZTrackerWidget
     };
 
+    /**
+     * WidgetList - Metadata for rendering the dashboard cards.
+     *
+     * Each entry defines how a widget appears in the main grid:
+     * - id: Matches WidgetRegistry key
+     * - label: Card title
+     * - icon: Emoji displayed on card
+     * - desc: Short description below title
+     */
     var WidgetList = [
         { id: 'object-detector', label: 'Object Detector', icon: '🔍', desc: 'Find and locate any object in your scene with bounding boxes' },
         { id: 'smart-counter', label: 'Smart Counter', icon: '🔢', desc: 'Count specific objects with visual markers and totals' },
@@ -3754,7 +4380,16 @@
         { id: 'ptz-tracker', label: 'PTZ Auto-Tracker', icon: '🎯', desc: 'AI-powered tracking that controls PTZ cameras automatically' }
     ];
 
-    // Module info content from README for display in modals
+    /**
+     * WidgetInfo - Help content displayed in widget info modals.
+     *
+     * Each widget has three sections:
+     * - whatItDoes: Technical description of functionality
+     * - whyUseful: Real-world use cases and benefits
+     * - tryThis: Step-by-step suggestion for trying the feature
+     *
+     * Content sourced from README.md for consistency.
+     */
     var WidgetInfo = {
         'object-detector': {
             whatItDoes: 'You type in any object (like "coffee mug" or "chair") and the AI finds it in your image, drawing a colored box around each one it spots.',
@@ -3796,6 +4431,16 @@
     // ============================================================
     // GETTING STARTED CONTENT
     // ============================================================
+    /**
+     * GettingStartedContent - Content for the Getting Started modal.
+     *
+     * Provides onboarding information for new users including:
+     * - What visual reasoning is
+     * - Setup requirements (API key, webcam)
+     * - Step-by-step first-time setup
+     * - Tips for best results
+     * - Privacy information
+     */
     var GettingStartedContent = {
         title: 'Getting Started with Visual Reasoning',
         sections: [
@@ -3825,6 +4470,36 @@
     // ============================================================
     // DASHBOARD (Card-based UI)
     // ============================================================
+    /**
+     * Dashboard - Main application controller and UI manager.
+     *
+     * The Dashboard is responsible for:
+     * - Rendering the main card grid layout
+     * - Managing navigation (header, API key status)
+     * - Opening/closing widget modals
+     * - Instantiating widgets from the registry
+     * - Handling the Getting Started modal
+     * - Managing overall application state
+     *
+     * UI Structure:
+     * ┌─────────────────────────────────────────────────────┐
+     * │ Header (Logo, Getting Started, API Key Status)     │
+     * ├─────────────────────────────────────────────────────┤
+     * │ Intro Text                                          │
+     * ├─────────────────────────────────────────────────────┤
+     * │ Card Grid                                           │
+     * │ ┌───────┐ ┌───────┐ ┌───────┐ ┌───────┐           │
+     * │ │Widget1│ │Widget2│ │Widget3│ │Widget4│           │
+     * │ └───────┘ └───────┘ └───────┘ └───────┘           │
+     * │ ┌───────┐ ┌───────┐ ┌───────┐                     │
+     * │ │Widget5│ │Widget6│ │Widget7│                     │
+     * │ └───────┘ └───────┘ └───────┘                     │
+     * └─────────────────────────────────────────────────────┘
+     *
+     * @constructor
+     * @param {HTMLElement} rootEl - Container element for the dashboard
+     * @param {object} options     - Configuration options
+     */
     function Dashboard(rootEl, options) {
         this.rootEl = rootEl;
         this.options = options || {};
@@ -3833,6 +4508,10 @@
         this.init();
     }
 
+    /**
+     * Initialize the dashboard.
+     * Loads stored API key, renders UI, sets up event listeners.
+     */
     Dashboard.prototype.init = function() {
         var storedKey = Utils.getStoredApiKey();
         if (storedKey) CONFIG.apiKey = storedKey;
@@ -4078,7 +4757,30 @@
     // ============================================================
     // PUBLIC API
     // ============================================================
+    /**
+     * MoonDemo - Public API exposed to window object.
+     *
+     * This is the only module exposed globally. All other code is
+     * encapsulated within the IIFE closure.
+     *
+     * Usage from HTML:
+     *   MoonDemo.init('#my-container');
+     *
+     * @namespace
+     */
     var MoonDemo = {
+        /**
+         * Initialize the full dashboard UI in a container element.
+         * This is the standard way to start the application.
+         *
+         * @param {string|HTMLElement} selector - CSS selector or DOM element
+         * @param {object} options              - Configuration options (reserved)
+         * @returns {Dashboard}                 - Dashboard instance
+         *
+         * @example
+         * // Initialize in a div with id "app"
+         * MoonDemo.init('#app');
+         */
         init: function(selector, options) {
             var rootEl = typeof selector === 'string' ? document.querySelector(selector) : selector;
             if (!rootEl) {
@@ -4088,6 +4790,19 @@
             return new Dashboard(rootEl, options);
         },
 
+        /**
+         * Mount a single widget without the full dashboard.
+         * Useful for embedding individual widgets in custom layouts.
+         *
+         * @param {string} widgetId             - Widget ID (e.g., 'object-detector')
+         * @param {string|HTMLElement} selector - Container selector or element
+         * @param {object} options              - Widget-specific options
+         * @returns {WidgetBase}                - Widget instance
+         *
+         * @example
+         * // Mount just the Object Detector widget
+         * MoonDemo.mountWidget('object-detector', '#detector-container');
+         */
         mountWidget: function(widgetId, selector, options) {
             var rootEl = typeof selector === 'string' ? document.querySelector(selector) : selector;
             if (!rootEl) return null;
@@ -4103,18 +4818,30 @@
             return instance;
         },
 
+        /** Get list of available widgets (returns copy). */
         getWidgets: function() { return WidgetList.slice(); },
+
+        /**
+         * Set the API key programmatically.
+         * @param {string} key     - MoonDream API key
+         * @param {boolean} persist - Store in sessionStorage if true
+         */
         setApiKey: function(key, persist) {
             CONFIG.apiKey = key;
             if (persist) Utils.storeApiKey(key);
         },
+
+        /** Clear the stored API key. */
         clearApiKey: function() {
             CONFIG.apiKey = null;
             Utils.storeApiKey(null);
         },
+
+        /** Check if an API key is currently set. */
         hasApiKey: function() { return !!CONFIG.apiKey; }
     };
 
+    // Expose MoonDemo to global scope (window in browsers)
     global.MoonDemo = MoonDemo;
 
 })(typeof window !== 'undefined' ? window : this);
