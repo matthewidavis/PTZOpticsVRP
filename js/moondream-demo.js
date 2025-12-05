@@ -2702,7 +2702,6 @@
                 if (typeof cv !== 'undefined') {
                     cv['onRuntimeInitialized'] = function() {
                         self._cvReady = true;
-                        console.log('OpenCV ready');
                     };
                 }
             };
@@ -2734,7 +2733,6 @@
             self.processFrameResults(results);
         });
 
-        console.log('FaceMesh initialized');
     };
 
     ProductionMonitorWidget.prototype.toggleMonitor = function(key) {
@@ -3703,7 +3701,7 @@
         var url = 'http://' + this._ptzSettings.cameraIP + '/cgi-bin/ptzctrl.cgi?' + endpoint;
 
         fetch(url, { method: 'GET', mode: 'no-cors' }).catch(function(err) {
-            console.log('PTZ command sent (no-cors):', command);
+            // Silently handle - no-cors requests don't return readable responses
         });
     };
 
