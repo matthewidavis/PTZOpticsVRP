@@ -3899,6 +3899,11 @@
 
         this.main.innerHTML = '';
 
+        // Intro text
+        var intro = Utils.createElement('p', 'moon-home-intro');
+        intro.textContent = 'This interactive playground shows how artificial intelligence can "see" and understand what\'s in your camera feed using visual reasoning.';
+        this.main.appendChild(intro);
+
         // Card grid
         var grid = Utils.createElement('div', 'moon-card-grid');
 
@@ -4025,11 +4030,6 @@
         this.modalBody.className = 'moon-widget-modal-body moon-getting-started-content';
 
         var content = Utils.createElement('div', 'moon-gs-content');
-
-        // Intro
-        var intro = Utils.createElement('p', 'moon-gs-intro');
-        intro.textContent = 'Welcome! This interactive demo shows how artificial intelligence can "see" and understand what\'s in your camera feed using visual reasoning.';
-        content.appendChild(intro);
 
         // Sections
         GettingStartedContent.sections.forEach(function(section) {
