@@ -89,6 +89,8 @@
 /* ============================================================
    BASE RESET
    ============================================================ */
+.moon-app,
+.moon-app *,
 .moon-dashboard,
 .moon-dashboard *,
 .moon-widget,
@@ -101,7 +103,457 @@
 }
 
 /* ============================================================
-   DASHBOARD LAYOUT
+   NEW CARD-BASED APP LAYOUT
+   ============================================================ */
+.moon-app {
+    min-height: 100vh;
+    background: var(--moon-bg);
+    color: var(--moon-text);
+    font-family: var(--moon-font);
+    font-size: 14px;
+    line-height: 1.5;
+}
+
+/* Top Header Bar */
+.moon-header {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: var(--moon-space-md) var(--moon-space-xl);
+    background: var(--moon-bg-secondary);
+    border-bottom: 1px solid var(--moon-border);
+}
+
+.moon-header-brand {
+    display: flex;
+    align-items: center;
+    gap: var(--moon-space-sm);
+}
+
+.moon-header-title {
+    font-size: 22px;
+    font-weight: 600;
+    color: var(--moon-text);
+}
+
+/* Floating API Key Status (lower right) */
+.moon-api-key-float {
+    position: fixed;
+    bottom: var(--moon-space-lg);
+    right: var(--moon-space-lg);
+    display: flex;
+    align-items: center;
+    gap: var(--moon-space-sm);
+    padding: var(--moon-space-sm) var(--moon-space-md);
+    background: var(--moon-bg-secondary);
+    border: 1px solid var(--moon-border);
+    border-radius: var(--moon-radius-lg);
+    box-shadow: var(--moon-shadow-lg);
+    z-index: 99;
+}
+
+.moon-key-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--moon-space-xs);
+    padding: var(--moon-space-xs) var(--moon-space-sm);
+    border-radius: var(--moon-radius);
+    font-size: 13px;
+    font-weight: 500;
+}
+
+.moon-key-badge.moon-key-set {
+    background: var(--moon-success-bg);
+    color: var(--moon-success);
+}
+
+.moon-key-badge.moon-key-missing {
+    background: var(--moon-warning-bg);
+    color: var(--moon-warning);
+}
+
+/* Home / Card Grid */
+.moon-home {
+    max-width: 900px;
+    margin: 0 auto;
+    padding: var(--moon-space-xl);
+}
+
+.moon-home-subtitle {
+    text-align: center;
+    font-size: 18px;
+    color: var(--moon-text-secondary);
+    margin-bottom: var(--moon-space-xl);
+}
+
+.moon-card-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: var(--moon-space-lg);
+    margin-bottom: var(--moon-space-xl);
+}
+
+.moon-demo-card {
+    background: var(--moon-bg-secondary);
+    border: 1px solid var(--moon-border);
+    border-radius: var(--moon-radius-lg);
+    padding: var(--moon-space-lg);
+    text-align: center;
+    cursor: pointer;
+    transition: all var(--moon-transition);
+}
+
+.moon-demo-card:hover {
+    border-color: var(--moon-primary);
+    transform: translateY(-4px);
+    box-shadow: var(--moon-shadow-lg);
+}
+
+.moon-demo-card-icon {
+    font-size: 48px;
+    display: block;
+    margin-bottom: var(--moon-space-md);
+}
+
+.moon-demo-card-title {
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--moon-text);
+    margin-bottom: var(--moon-space-sm);
+}
+
+.moon-demo-card-desc {
+    font-size: 13px;
+    color: var(--moon-text-secondary);
+    line-height: 1.5;
+}
+
+/* Getting Started Button */
+.moon-getting-started-btn {
+    display: flex;
+    align-items: center;
+    gap: var(--moon-space-lg);
+    width: 100%;
+    padding: var(--moon-space-lg);
+    background: var(--moon-bg-secondary);
+    border: 1px solid var(--moon-border);
+    border-radius: var(--moon-radius-lg);
+    cursor: pointer;
+    transition: all var(--moon-transition);
+    text-align: left;
+    color: var(--moon-text);
+    font-family: inherit;
+}
+
+.moon-getting-started-btn:hover {
+    border-color: var(--moon-primary);
+    transform: translateY(-4px);
+    box-shadow: var(--moon-shadow-lg);
+}
+
+.moon-getting-started-icon {
+    font-size: 36px;
+}
+
+.moon-getting-started-text {
+    display: flex;
+    flex-direction: column;
+    gap: var(--moon-space-xs);
+}
+
+.moon-getting-started-text strong {
+    font-size: 16px;
+    color: var(--moon-text);
+}
+
+.moon-getting-started-text span {
+    font-size: 14px;
+    color: var(--moon-text-secondary);
+}
+
+/* Widget Modal Overlay */
+.moon-widget-modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.85);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+    padding: var(--moon-space-lg);
+}
+
+.moon-widget-modal {
+    background: var(--moon-bg);
+    border-radius: var(--moon-radius-lg);
+    width: calc(100% - 40px);
+    max-width: 1300px;
+    height: calc(100vh - 80px);
+    display: flex;
+    flex-direction: column;
+    box-shadow: var(--moon-shadow-lg);
+    animation: moonModalSlideIn 0.2s ease;
+}
+
+@keyframes moonModalSlideIn {
+    from { opacity: 0; transform: scale(0.95) translateY(20px); }
+    to { opacity: 1; transform: scale(1) translateY(0); }
+}
+
+.moon-widget-modal-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: var(--moon-space-md) var(--moon-space-xl);
+    background: var(--moon-bg-secondary);
+    border-bottom: 1px solid var(--moon-border);
+    border-radius: var(--moon-radius-lg) var(--moon-radius-lg) 0 0;
+    flex-shrink: 0;
+}
+
+.moon-widget-modal-title {
+    font-size: 18px;
+    font-weight: 600;
+    color: var(--moon-text);
+    display: flex;
+    align-items: center;
+    gap: var(--moon-space-sm);
+}
+
+.moon-widget-modal-icon {
+    font-size: 24px;
+}
+
+.moon-widget-modal-close {
+    width: 36px;
+    height: 36px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: transparent;
+    border: none;
+    color: var(--moon-text-muted);
+    font-size: 28px;
+    cursor: pointer;
+    border-radius: var(--moon-radius);
+    transition: all var(--moon-transition);
+}
+
+.moon-widget-modal-close:hover {
+    background: var(--moon-bg-tertiary);
+    color: var(--moon-text);
+}
+
+.moon-widget-modal-body {
+    flex: 1 1 0;
+    min-height: 0;
+    overflow-y: auto;
+    padding: var(--moon-space-xl);
+}
+
+/* Hide widget icon and title inside modal (modal has its own header), keep description */
+.moon-widget-modal-body .moon-widget-icon,
+.moon-widget-modal-body .moon-widget-title,
+.moon-widget-modal-body h2.moon-widget-title,
+.moon-widget-modal-body span.moon-widget-icon {
+    display: none !important;
+    visibility: hidden !important;
+    height: 0 !important;
+    overflow: hidden !important;
+}
+
+/* Style the description nicely when shown alone */
+.moon-widget-modal-body .moon-widget-header {
+    margin-bottom: var(--moon-space-lg);
+    text-align: center;
+}
+
+.moon-widget-modal-body .moon-widget-desc,
+.moon-widget-modal-body p.moon-widget-desc {
+    display: block !important;
+    font-size: 15px;
+    color: var(--moon-text-secondary);
+    max-width: 700px;
+    margin: 0 auto;
+}
+
+/* Adjust widget inside modal */
+.moon-widget-modal-body .moon-widget {
+    max-width: 1100px;
+    margin: 0 auto;
+    width: 100%;
+}
+
+/* Center widget body content inside modal */
+.moon-widget-modal-body .moon-widget-body {
+    padding: 0;
+}
+
+/* Widget Info Section (footer of modals) */
+.moon-widget-info {
+    flex-shrink: 0;
+    padding: var(--moon-space-lg) var(--moon-space-xl);
+    background: var(--moon-bg-secondary);
+    border-top: 1px solid var(--moon-border);
+    border-radius: 0 0 var(--moon-radius-lg) var(--moon-radius-lg);
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: var(--moon-space-lg);
+}
+
+.moon-widget-info-section h4 {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--moon-primary);
+    margin-bottom: var(--moon-space-sm);
+}
+
+.moon-widget-info-section p {
+    font-size: 13px;
+    color: var(--moon-text-secondary);
+    line-height: 1.6;
+}
+
+@media (max-width: 768px) {
+    .moon-widget-info {
+        grid-template-columns: 1fr;
+        padding: var(--moon-space-md);
+    }
+}
+
+/* Getting Started Content */
+.moon-getting-started-content {
+    max-width: 700px;
+    margin: 0 auto;
+}
+
+.moon-gs-content {
+    display: flex;
+    flex-direction: column;
+    gap: var(--moon-space-lg);
+}
+
+.moon-gs-intro {
+    font-size: 18px;
+    color: var(--moon-text);
+    line-height: 1.7;
+    padding-bottom: var(--moon-space-lg);
+    border-bottom: 1px solid var(--moon-border);
+}
+
+.moon-gs-section h3 {
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--moon-primary);
+    margin-bottom: var(--moon-space-sm);
+}
+
+.moon-gs-section p {
+    font-size: 14px;
+    color: var(--moon-text-secondary);
+    line-height: 1.7;
+}
+
+.moon-gs-section a {
+    color: var(--moon-primary);
+    text-decoration: none;
+}
+
+.moon-gs-section a:hover {
+    text-decoration: underline;
+}
+
+.moon-gs-links {
+    padding-top: var(--moon-space-lg);
+    border-top: 1px solid var(--moon-border);
+}
+
+.moon-gs-links h3 {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--moon-text-muted);
+    margin-bottom: var(--moon-space-sm);
+}
+
+.moon-gs-links a {
+    color: var(--moon-primary);
+    text-decoration: none;
+}
+
+.moon-gs-links a:hover {
+    text-decoration: underline;
+}
+
+/* Responsive Card Grid */
+@media (max-width: 768px) {
+    .moon-card-grid {
+        grid-template-columns: repeat(2, 1fr);
+    }
+
+    .moon-header {
+        padding: var(--moon-space-sm) var(--moon-space-md);
+    }
+
+    .moon-header-title {
+        font-size: 16px;
+    }
+
+    .moon-home {
+        padding: var(--moon-space-md);
+    }
+
+    .moon-widget-modal-overlay {
+        padding: var(--moon-space-sm);
+    }
+
+    .moon-widget-modal {
+        width: calc(100% - 20px);
+        height: calc(100vh - 40px);
+    }
+
+    .moon-widget-modal-header {
+        padding: var(--moon-space-sm) var(--moon-space-md);
+    }
+
+    .moon-widget-modal-body {
+        padding: var(--moon-space-md);
+    }
+
+    .moon-api-key-float {
+        bottom: var(--moon-space-sm);
+        right: var(--moon-space-sm);
+        padding: var(--moon-space-xs) var(--moon-space-sm);
+    }
+}
+
+@media (max-width: 480px) {
+    .moon-card-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .moon-demo-card {
+        padding: var(--moon-space-md);
+    }
+
+    .moon-demo-card-icon {
+        font-size: 36px;
+    }
+
+    .moon-getting-started-btn {
+        flex-direction: column;
+        text-align: center;
+    }
+
+    .moon-getting-started-text {
+        align-items: center;
+    }
+}
+
+/* ============================================================
+   LEGACY DASHBOARD LAYOUT (keeping for backwards compatibility)
    ============================================================ */
 .moon-dashboard {
     display: flex;
@@ -171,6 +623,7 @@
     padding: var(--moon-space-xl);
     overflow-y: auto;
     background: var(--moon-bg);
+    min-width: 0;
 }
 
 /* ============================================================
@@ -416,11 +869,12 @@
    GRID SYSTEM
    ============================================================ */
 .moon-grid { display: grid; gap: var(--moon-space-xl); }
-.moon-grid-2 { grid-template-columns: 1fr 1fr; }
+.moon-grid-2 { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
 .moon-col {
     display: flex;
     flex-direction: column;
     gap: var(--moon-space-lg);
+    min-width: 0;
 }
 
 /* Ensure proper spacing for child elements in columns */
@@ -657,12 +1111,16 @@
     border-radius: var(--moon-radius-lg);
     overflow: hidden;
     aspect-ratio: 16 / 9;
+    width: 100%;
     display: flex;
     align-items: center;
     justify-content: center;
 }
 
 .moon-video {
+    position: absolute;
+    top: 0;
+    left: 0;
     width: 100%;
     height: 100%;
     object-fit: contain;
@@ -671,7 +1129,10 @@
 
 .moon-capture-canvas,
 .moon-image-canvas {
-    display: block;
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
     max-width: 100%;
     max-height: 100%;
     background: #000;
@@ -725,6 +1186,21 @@
 
 .moon-file-input { display: none; }
 .moon-no-webcam { font-size: 12px; color: var(--moon-text-muted); padding: var(--moon-space-sm); }
+
+.moon-resolution-select {
+    padding: var(--moon-space-xs) var(--moon-space-sm);
+    font-size: 13px;
+    background: var(--moon-bg-tertiary);
+    border: 1px solid var(--moon-border);
+    border-radius: var(--moon-radius);
+    color: var(--moon-text);
+    cursor: pointer;
+}
+
+.moon-resolution-select:disabled {
+    opacity: 0.6;
+    cursor: wait;
+}
 
 /* Canvas overlay for bounding boxes, points, zones */
 .moon-overlay-canvas {

@@ -84,16 +84,16 @@
         storeApiKey: function(key) {
             try {
                 if (key) {
-                    localStorage.setItem(CONFIG.storageKey, key);
+                    sessionStorage.setItem(CONFIG.storageKey, key);
                 } else {
-                    localStorage.removeItem(CONFIG.storageKey);
+                    sessionStorage.removeItem(CONFIG.storageKey);
                 }
             } catch (e) {}
         },
 
         getStoredApiKey: function() {
             try {
-                return localStorage.getItem(CONFIG.storageKey);
+                return sessionStorage.getItem(CONFIG.storageKey);
             } catch (e) {
                 return null;
             }
@@ -321,12 +321,63 @@
     var MediaCapture = {
         stream: null,
         videoElement: null,
+        currentResolution: null,
+        supportedResolutions: [],
+
+        // Common resolutions to test
+        standardResolutions: [
+            { width: 1920, height: 1080, label: '1080p (16:9)' },
+            { width: 1280, height: 720, label: '720p (16:9)' },
+            { width: 640, height: 480, label: '480p (4:3)' },
+            { width: 640, height: 360, label: '360p (16:9)' },
+            { width: 320, height: 240, label: '240p (4:3)' }
+        ],
 
         isWebcamSupported: function() {
             return !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia);
         },
 
-        startWebcam: function(videoElement) {
+        // Probe camera for supported resolutions
+        getSupportedResolutions: function() {
+            var self = this;
+            return new Promise(function(resolve) {
+                if (!self.stream) {
+                    resolve([]);
+                    return;
+                }
+
+                var track = self.stream.getVideoTracks()[0];
+                if (!track) {
+                    resolve([]);
+                    return;
+                }
+
+                var capabilities = track.getCapabilities ? track.getCapabilities() : null;
+                var supported = [];
+
+                if (capabilities && capabilities.width && capabilities.height) {
+                    // Filter standard resolutions to those within camera capabilities
+                    self.standardResolutions.forEach(function(res) {
+                        if (res.width <= capabilities.width.max &&
+                            res.height <= capabilities.height.max &&
+                            res.width >= capabilities.width.min &&
+                            res.height >= capabilities.height.min) {
+                            supported.push(res);
+                        }
+                    });
+                }
+
+                // If no capabilities API, just offer standard resolutions
+                if (supported.length === 0) {
+                    supported = self.standardResolutions.slice(0, 3); // Top 3
+                }
+
+                self.supportedResolutions = supported;
+                resolve(supported);
+            });
+        },
+
+        startWebcam: function(videoElement, resolution) {
             var self = this;
             return new Promise(function(resolve, reject) {
                 if (!self.isWebcamSupported()) {
@@ -334,20 +385,32 @@
                     return;
                 }
 
-                // Use simpler constraints for better compatibility
+                // Build constraints - use exact if resolution specified
                 var constraints = {
-                    video: true,
+                    video: resolution ? {
+                        width: { exact: resolution.width },
+                        height: { exact: resolution.height }
+                    } : true,
                     audio: false
                 };
 
                 navigator.mediaDevices.getUserMedia(constraints).then(function(stream) {
                     self.stream = stream;
                     self.videoElement = videoElement;
+                    self.currentResolution = resolution || null;
                     videoElement.srcObject = stream;
 
                     // Wait for video to be ready before resolving
                     videoElement.onloadedmetadata = function() {
                         videoElement.play().then(function() {
+                            // Store actual resolution if not specified
+                            if (!self.currentResolution && videoElement.videoWidth) {
+                                self.currentResolution = {
+                                    width: videoElement.videoWidth,
+                                    height: videoElement.videoHeight,
+                                    label: videoElement.videoWidth + 'x' + videoElement.videoHeight
+                                };
+                            }
                             resolve(stream);
                         }).catch(function(playErr) {
                             reject(new Error('Could not start video playback'));
@@ -366,11 +429,25 @@
                     } else if (err.name === 'NotReadableError') {
                         reject(new Error('Camera is in use by another application. Please close other apps using the camera.'));
                     } else if (err.name === 'OverconstrainedError') {
-                        reject(new Error('Camera does not support requested settings. Trying again...'));
+                        // Resolution not supported, try without constraints
+                        if (resolution) {
+                            self.startWebcam(videoElement, null).then(resolve).catch(reject);
+                        } else {
+                            reject(new Error('Camera does not support requested settings.'));
+                        }
                     } else {
                         reject(new Error('Camera error: ' + (err.message || err.name)));
                     }
                 });
+            });
+        },
+
+        // Change resolution by restarting stream
+        changeResolution: function(videoElement, resolution) {
+            var self = this;
+            return new Promise(function(resolve, reject) {
+                self.stopWebcam();
+                self.startWebcam(videoElement, resolution).then(resolve).catch(reject);
             });
         },
 
@@ -383,6 +460,7 @@
                 this.videoElement.srcObject = null;
                 this.videoElement = null;
             }
+            this.currentResolution = null;
         },
 
         captureFrame: function(videoElement, quality) {
@@ -460,10 +538,10 @@
             countTip: 'Works best with clearly visible, separated objects',
             zoneTip: 'Click to place points, then click "Finish Zone" to complete',
             continuousTip: 'Continuously analyzes your webcam feed every 1.5 seconds',
-            apiKeyTip: 'Your API key is stored locally in your browser and never shared'
+            apiKeyTip: 'Your API key is stored for this session only and clears when you close the tab'
         },
         welcome: {
-            title: 'Welcome to PTZOptics Moondreams',
+            title: 'Welcome to PTZOptics Visual Reasoning',
             subtitle: 'AI Vision Demos',
             step1: '1. Enter your MoonDream API key',
             step2: '2. Start your webcam or upload an image',
@@ -576,7 +654,7 @@
                     '<div class="moon-form-group">' +
                         '<label class="moon-label">Your API Key</label>' +
                         '<input type="password" class="moon-input moon-api-key-input" placeholder="Paste your MoonDream API key here" autocomplete="off">' +
-                        '<div class="moon-input-hint">Your key is stored locally and never shared with anyone except MoonDream.</div>' +
+                        '<div class="moon-input-hint">Your key is stored for this session only and clears when you close the tab.</div>' +
                         '<div class="moon-input-error-msg" style="display:none;"></div>' +
                     '</div>' +
                     '<div class="moon-modal-toggle">' +
@@ -709,7 +787,9 @@
         this.rootEl = rootEl;
         this.context = context;
         rootEl.innerHTML = '';
-        rootEl.className = 'moon-widget moon-widget-' + this.id;
+        // Preserve existing classes (like moon-widget-modal-body) when mounting in modal
+        var existingClasses = rootEl.className;
+        rootEl.className = existingClasses + ' moon-widget moon-widget-' + this.id;
         this.render();
     };
 
@@ -911,6 +991,35 @@
         // Controls
         var controls = Utils.createElement('div', 'moon-media-controls');
 
+        // Resolution selector (visible but disabled until webcam starts)
+        var resolutionSelect = Utils.createElement('select', 'moon-select moon-resolution-select');
+        resolutionSelect.disabled = true;
+        // Pre-populate with standard resolutions
+        MediaCapture.standardResolutions.forEach(function(res, index) {
+            var option = document.createElement('option');
+            option.value = index;
+            option.textContent = res.label;
+            resolutionSelect.appendChild(option);
+        });
+        resolutionSelect.onchange = function() {
+            var selectedIndex = resolutionSelect.selectedIndex;
+            if (selectedIndex < 0) return;
+
+            var resolutions = MediaCapture.supportedResolutions;
+            var resolution = resolutions[selectedIndex];
+
+            if (resolution && MediaCapture.stream) {
+                resolutionSelect.disabled = true;
+                MediaCapture.changeResolution(video, resolution).then(function() {
+                    resolutionSelect.disabled = false;
+                    self._syncOverlaySize();
+                }).catch(function(err) {
+                    resolutionSelect.disabled = false;
+                    self.showError('Could not change resolution: ' + err.message);
+                });
+            }
+        };
+
         if (MediaCapture.isWebcamSupported()) {
             var webcamBtn = Utils.createElement('button', 'moon-btn moon-btn-secondary moon-btn-webcam', {
                 textContent: Strings.common.startWebcam
@@ -922,6 +1031,7 @@
                     webcamBtn.classList.remove('moon-btn-active');
                     video.style.display = 'none';
                     placeholder.style.display = 'flex';
+                    resolutionSelect.disabled = true;
                     self.clearOverlay();
                 } else {
                     MediaCapture.startWebcam(video).then(function() {
@@ -932,12 +1042,34 @@
                         placeholder.style.display = 'none';
                         self.hideError();
                         self._syncOverlaySize();
+
+                        // Update resolution dropdown with supported resolutions
+                        MediaCapture.getSupportedResolutions().then(function(resolutions) {
+                            if (resolutions.length > 0) {
+                                resolutionSelect.innerHTML = '';
+                                var currentRes = MediaCapture.currentResolution;
+
+                                resolutions.forEach(function(res, index) {
+                                    var option = document.createElement('option');
+                                    option.value = index;
+                                    option.textContent = res.label;
+                                    // Select current resolution
+                                    if (currentRes && res.width === currentRes.width && res.height === currentRes.height) {
+                                        option.selected = true;
+                                    }
+                                    resolutionSelect.appendChild(option);
+                                });
+
+                                resolutionSelect.disabled = false;
+                            }
+                        });
                     }).catch(function(err) {
                         self.showError(err.message);
                     });
                 }
             };
             controls.appendChild(webcamBtn);
+            controls.appendChild(resolutionSelect);
         }
 
         // File upload
@@ -983,6 +1115,10 @@
                         if (wcBtn) {
                             wcBtn.textContent = Strings.common.startWebcam;
                             wcBtn.classList.remove('moon-btn-active');
+                        }
+                        var resSelect = controls.querySelector('.moon-resolution-select');
+                        if (resSelect) {
+                            resSelect.disabled = true;
                         }
                     }
                 };
@@ -1697,8 +1833,8 @@
         modeGroup.innerHTML = '<label class="moon-label">Detection Mode:</label>';
 
         var modeSelect = Utils.createElement('select', 'moon-select');
-        modeSelect.innerHTML = '<option value="person">Full Body</option>' +
-            '<option value="face">Faces Only</option>' +
+        modeSelect.innerHTML = '<option value="face">Faces Only</option>' +
+            '<option value="person">Full Body</option>' +
             '<option value="hand">Hands</option>';
         modeGroup.appendChild(modeSelect);
         rightCol.appendChild(modeGroup);
@@ -1735,11 +1871,6 @@
         results.innerHTML = '<div class="moon-results-list moon-person-list"></div>';
         rightCol.appendChild(results);
 
-        // Framing suggestions
-        var suggestions = Utils.createElement('div', 'moon-suggestions');
-        suggestions.innerHTML = '<h4>Framing Suggestions</h4><div class="moon-suggestions-content"></div>';
-        rightCol.appendChild(suggestions);
-
         grid.appendChild(rightCol);
         body.appendChild(grid);
         this.rootEl.appendChild(body);
@@ -1747,7 +1878,6 @@
         this._modeSelect = modeSelect;
         this._countDisplay = countDisplay;
         this._personList = results.querySelector('.moon-person-list');
-        this._suggestions = suggestions.querySelector('.moon-suggestions-content');
     };
 
     PersonTrackerWidget.prototype.track = function() {
@@ -1782,7 +1912,6 @@
         labelEl.textContent = mode + (objects.length === 1 ? '' : 's') + ' detected';
 
         this._personList.innerHTML = '';
-        this._suggestions.innerHTML = '';
 
         if (objects.length === 0) {
             this._personList.innerHTML = '<p class="moon-no-results">No people detected</p>';
@@ -1793,18 +1922,14 @@
         var w = this.overlayCanvas.width;
         var h = this.overlayCanvas.height;
 
-        var suggestions = [];
-
         objects.forEach(function(obj, index) {
             var color = CONFIG.colors.person;
             var label = mode + ' ' + (index + 1);
 
             CanvasUtils.drawBoundingBox(ctx, obj, color, label, w, h);
 
-            // Calculate position info for suggestions
+            // Calculate position info
             var centerX = (obj.x_min + obj.x_max) / 2;
-            var centerY = (obj.y_min + obj.y_max) / 2;
-            var size = (obj.x_max - obj.x_min) * (obj.y_max - obj.y_min);
 
             var position = '';
             if (centerX < 0.33) position = 'left';
@@ -1816,31 +1941,10 @@
                 '<span class="moon-result-label">' + label + '</span>' +
                 '<span class="moon-result-position">' + position + ' third</span>';
             this._personList.appendChild(item);
-
-            // Generate framing suggestion
-            if (size < 0.1) {
-                suggestions.push('Person ' + (index + 1) + ' is far - consider zooming in');
-            } else if (size > 0.5) {
-                suggestions.push('Person ' + (index + 1) + ' fills frame - consider wider shot');
-            }
-
-            if (centerY < 0.3 && obj.y_min > 0.1) {
-                suggestions.push('Person ' + (index + 1) + ' has excess headroom');
-            }
         }.bind(this));
 
         // Rule of thirds overlay
         this.drawRuleOfThirds();
-
-        // Display suggestions
-        if (suggestions.length > 0) {
-            suggestions.forEach(function(s) {
-                var p = Utils.createElement('p', 'moon-suggestion-item', { textContent: '• ' + s });
-                this._suggestions.appendChild(p);
-            }.bind(this));
-        } else {
-            this._suggestions.innerHTML = '<p class="moon-suggestion-good">✓ Framing looks good!</p>';
-        }
     };
 
     PersonTrackerWidget.prototype.drawRuleOfThirds = function() {
@@ -2414,7 +2518,7 @@
             { key: 'orientation', label: 'Orientation', icon: '📐', source: 'MediaPipe' },
             { key: 'talking', label: 'Talking', icon: '🗣️', source: 'MediaPipe' },
             { key: 'focus', label: 'Focus', icon: '🎯', source: 'OpenCV' },
-            { key: 'lighting', label: 'Lighting', icon: '💡', source: 'OpenCV' },
+            { key: 'lighting', label: 'Lighting', icon: '💡', source: 'Canvas' },
             { key: 'presence', label: 'Presence', icon: '👁️', source: 'MoonDream' },
             { key: 'composition', label: 'Composition', icon: '🖼️', source: 'MoonDream' },
             { key: 'sceneContext', label: 'Scene Context', icon: '🎬', source: 'MoonDream' }
@@ -3035,22 +3139,85 @@
     };
 
     var WidgetList = [
-        { id: 'object-detector', label: 'Object Detector', icon: '🔍' },
-        { id: 'smart-counter', label: 'Smart Counter', icon: '🔢' },
-        { id: 'scene-analyzer', label: 'Scene Analyzer', icon: '🎬' },
-        { id: 'person-tracker', label: 'Person Tracker', icon: '👤' },
-        { id: 'zone-monitor', label: 'Zone Monitor', icon: '🚧' },
-        { id: 'production-monitor', label: 'Production Monitor', icon: '🎥' }
+        { id: 'object-detector', label: 'Object Detector', icon: '🔍', desc: 'Find and locate any object in your scene with bounding boxes' },
+        { id: 'smart-counter', label: 'Smart Counter', icon: '🔢', desc: 'Count specific objects with visual markers and totals' },
+        { id: 'scene-analyzer', label: 'Scene Analyzer', icon: '🎬', desc: 'Get AI captions and ask questions about what you see' },
+        { id: 'person-tracker', label: 'Person Tracker', icon: '👤', desc: 'Track and locate people with face or body detection' },
+        { id: 'zone-monitor', label: 'Zone Monitor', icon: '🚧', desc: 'Draw zones and get alerts when objects enter them' },
+        { id: 'production-monitor', label: 'Production Monitor', icon: '🎥', desc: 'Real-time video quality monitoring dashboard' }
     ];
 
+    // Module info content from README for display in modals
+    var WidgetInfo = {
+        'object-detector': {
+            whatItDoes: 'You type in any object (like "coffee mug" or "chair") and the AI finds it in your image, drawing a colored box around each one it spots.',
+            whyUseful: 'Imagine a camera that automatically knows when a specific product appears on screen, or tracks where the host is sitting. This is how smart cameras can follow action without a human operator.',
+            tryThis: 'Point your webcam at your desk and search for "keyboard", "monitor", or "person". Watch how the AI outlines each object it finds.'
+        },
+        'smart-counter': {
+            whatItDoes: 'Tell it what to count ("people", "cars", "books") and it marks each one with a dot and gives you a total.',
+            whyUseful: 'Event producers use this to estimate crowd sizes. Retailers count customers. Warehouses track inventory. Instead of counting manually, AI does it instantly.',
+            tryThis: 'Hold up your hand and count "fingers". Or point at a bookshelf and count "books". The AI places a marker on each item it finds.'
+        },
+        'scene-analyzer': {
+            whatItDoes: 'Two features in one: Caption mode writes a sentence describing your entire scene. Q&A mode lets you ask questions and the AI answers based on what it sees.',
+            whyUseful: 'This demo best showcases visual reasoning—the AI doesn\'t just list objects, it understands context and relationships. This is how accessibility features describe images to visually impaired users, and how AI can automatically generate descriptions for video archives.',
+            tryThis: 'Click "Caption" to see how the AI describes your room. Then ask questions like "What color is the wall?" or "How many people are in the room?"'
+        },
+        'person-tracker': {
+            whatItDoes: 'Automatically finds all people in the frame and draws boxes around them. Includes modes for finding faces specifically or detecting the full body.',
+            whyUseful: 'This is the foundation of "auto-tracking" PTZ cameras that follow speakers around a room. It\'s also used in video conferencing to keep participants centered in frame.',
+            tryThis: 'Turn on your webcam and select "Faces Only" to see your face highlighted. Try "Full Body" mode to see yourself fully outlined.'
+        },
+        'zone-monitor': {
+            whatItDoes: 'You draw custom zones on your video feed, then the AI watches for specific objects entering those zones. When something you\'re looking for appears in your zone, it alerts you.',
+            whyUseful: 'Security systems use this to detect when someone enters a restricted area. Sports broadcasts use it to know when a ball crosses a line. Production teams use it to trigger camera switches.',
+            tryThis: 'Draw a zone by clicking to place points, then click "Finish Zone". Enter "face" in the detection field, start monitoring, and move in/out of your drawn zone to see the alert status change.'
+        },
+        'production-monitor': {
+            whatItDoes: 'A comprehensive video production quality dashboard that combines traditional computer vision with MoonDream\'s visual reasoning. It monitors 7 different aspects of your shot in real-time: Orientation, Talking, Focus, Lighting, Presence, Composition, and Scene Context.',
+            whyUseful: 'This is the kind of automated quality control that broadcast engineers dream of. Instead of manually checking that a speaker is in frame, facing the camera, properly lit, and in focus—the AI monitors everything continuously and alerts you to problems.',
+            tryThis: 'Start your webcam and click "Start Monitoring". Watch the status cards turn green (good), yellow (warning), or red (problem). Move around, look away from camera, or cover the lens to see how each monitor responds.'
+        }
+    };
+
     // ============================================================
-    // DASHBOARD
+    // GETTING STARTED CONTENT
+    // ============================================================
+    var GettingStartedContent = {
+        title: 'Getting Started with Visual Reasoning',
+        sections: [
+            {
+                title: 'What Is Visual Reasoning?',
+                content: 'Visual reasoning is AI\'s ability to not just see an image, but to understand and think about it. Traditional computer vision simply recognizes patterns—"that\'s a cat." Visual reasoning goes further—"that\'s a cat sitting on a red couch, looking at something outside the window."'
+            },
+            {
+                title: 'What You\'ll Need',
+                content: '<strong>1. A MoonDream API Key (free)</strong><br>Visit <a href="https://moondream.ai" target="_blank">moondream.ai</a>, create an account, and copy your API key.<br><br><strong>2. A Webcam or Images</strong><br>Any built-in or USB webcam works, or use "Upload Image" to analyze photos.'
+            },
+            {
+                title: 'First-Time Setup',
+                content: '1. Click "Set API Key" in the top bar and paste your key<br>2. Select any demo card below<br>3. Click "Start Webcam" or upload an image<br>4. Try the detection and analysis features!<br><br>Your API key is stored for this session only and clears when you close the tab.'
+            },
+            {
+                title: 'Tips for Best Results',
+                content: '• <strong>Lighting matters:</strong> Brighter, evenly-lit scenes work better<br>• <strong>Be specific:</strong> "red coffee mug" works better than "thing"<br>• <strong>Clear views:</strong> Partially hidden objects are harder to detect<br>• <strong>Try different words:</strong> If "person" doesn\'t work, try "human"'
+            },
+            {
+                title: 'Privacy & Your Data',
+                content: '• Your webcam feed stays local until you click an action<br>• Images are processed, not stored by MoonDream<br>• Your API key stays in your browser session only'
+            }
+        ]
+    };
+
+    // ============================================================
+    // DASHBOARD (Card-based UI)
     // ============================================================
     function Dashboard(rootEl, options) {
         this.rootEl = rootEl;
         this.options = options || {};
-        this.currentWidget = null;
         this.currentWidgetInstance = null;
+        this.modalOpen = false;
         this.init();
     }
 
@@ -3059,53 +3226,47 @@
         if (storedKey) CONFIG.apiKey = storedKey;
 
         this.rootEl.innerHTML = '';
-        this.rootEl.className = 'moon-dashboard';
+        this.rootEl.className = 'moon-app';
 
-        this.sidebar = Utils.createElement('nav', 'moon-sidebar');
-        this.main = Utils.createElement('main', 'moon-main');
+        // Top navigation bar
+        this.header = Utils.createElement('header', 'moon-header');
+        this.rootEl.appendChild(this.header);
+        this.renderHeader();
 
-        this.rootEl.appendChild(this.sidebar);
+        // Main content area (cards)
+        this.main = Utils.createElement('main', 'moon-home');
         this.rootEl.appendChild(this.main);
+        this.renderCards();
 
-        this.renderSidebar();
-        this.activateWidget(WidgetList[0].id);
+        // API key status (fixed lower right)
+        this._keyStatusEl = Utils.createElement('div', 'moon-api-key-float');
+        this.rootEl.appendChild(this._keyStatusEl);
+        this.updateKeyStatus();
+
+        // Modal container
+        this.modalOverlay = Utils.createElement('div', 'moon-widget-modal-overlay');
+        this.modalOverlay.style.display = 'none';
+        this.rootEl.appendChild(this.modalOverlay);
+        this.setupModal();
     };
 
-    Dashboard.prototype.renderSidebar = function() {
-        var self = this;
+    Dashboard.prototype.renderHeader = function() {
+        this.header.innerHTML = '';
 
-        var title = Utils.createElement('div', 'moon-sidebar-title');
-        title.innerHTML = '<span class="moon-logo">🌙</span> PTZOptics Moondreams';
-        this.sidebar.appendChild(title);
-
-        var nav = Utils.createElement('ul', 'moon-nav');
-
-        WidgetList.forEach(function(widget) {
-            var li = Utils.createElement('li', 'moon-nav-item');
-            li.dataset.widgetId = widget.id;
-            li.innerHTML = '<span class="moon-nav-icon">' + widget.icon + '</span>' +
-                '<span class="moon-nav-label">' + widget.label + '</span>';
-            li.onclick = function() { self.activateWidget(widget.id); };
-            nav.appendChild(li);
-        });
-
-        this.sidebar.appendChild(nav);
-
-        // API key status
-        var keyStatus = Utils.createElement('div', 'moon-api-status');
-        this.updateKeyStatus(keyStatus);
-        this.sidebar.appendChild(keyStatus);
-        this._keyStatusEl = keyStatus;
+        // Brand (centered)
+        var brand = Utils.createElement('div', 'moon-header-brand');
+        brand.innerHTML = '<span class="moon-header-title">PTZOptics Visual Reasoning Playground</span>';
+        this.header.appendChild(brand);
     };
 
-    Dashboard.prototype.updateKeyStatus = function(el) {
+    Dashboard.prototype.updateKeyStatus = function() {
         var self = this;
-        el = el || this._keyStatusEl;
+        var el = this._keyStatusEl;
         if (!el) return;
 
         if (CONFIG.apiKey) {
-            el.innerHTML = '<span class="moon-key-indicator moon-key-set">🔑 API Key Set</span>' +
-                '<button class="moon-btn moon-btn-sm">Change</button>';
+            el.innerHTML = '<span class="moon-key-badge moon-key-set">✓ API Key Set</span>' +
+                '<button class="moon-btn moon-btn-sm moon-btn-secondary">Change Key</button>';
             el.querySelector('.moon-btn').onclick = function() {
                 CONFIG.apiKey = null;
                 Utils.storeApiKey(null);
@@ -3113,34 +3274,193 @@
                 ApiKeyModal.show(function() { self.updateKeyStatus(); });
             };
         } else {
-            el.innerHTML = '<span class="moon-key-indicator moon-key-missing">🔑 No API Key</span>' +
-                '<button class="moon-btn moon-btn-sm">Set Key</button>';
+            el.innerHTML = '<span class="moon-key-badge moon-key-missing">No API Key</span>' +
+                '<button class="moon-btn moon-btn-sm moon-btn-primary">Set API Key</button>';
             el.querySelector('.moon-btn').onclick = function() {
                 ApiKeyModal.show(function() { self.updateKeyStatus(); });
             };
         }
     };
 
-    Dashboard.prototype.activateWidget = function(widgetId) {
-        if (this.currentWidgetInstance) {
-            this.currentWidgetInstance.unmount();
-        }
+    Dashboard.prototype.renderCards = function() {
+        var self = this;
 
-        this.sidebar.querySelectorAll('.moon-nav-item').forEach(function(item) {
-            item.classList.remove('moon-active');
-            if (item.dataset.widgetId === widgetId) {
-                item.classList.add('moon-active');
-            }
+        this.main.innerHTML = '';
+
+        // Card grid
+        var grid = Utils.createElement('div', 'moon-card-grid');
+
+        WidgetList.forEach(function(widget) {
+            var card = Utils.createElement('div', 'moon-demo-card');
+            card.innerHTML =
+                '<span class="moon-demo-card-icon">' + widget.icon + '</span>' +
+                '<h3 class="moon-demo-card-title">' + widget.label + '</h3>' +
+                '<p class="moon-demo-card-desc">' + widget.desc + '</p>';
+            card.onclick = function() { self.openWidget(widget.id); };
+            grid.appendChild(card);
         });
 
+        this.main.appendChild(grid);
+
+        // Getting Started button (full width at bottom)
+        var gettingStarted = Utils.createElement('button', 'moon-getting-started-btn');
+        gettingStarted.innerHTML =
+            '<span class="moon-getting-started-icon">📖</span>' +
+            '<span class="moon-getting-started-text">' +
+                '<strong>Getting Started</strong>' +
+                '<span>Learn about Visual Reasoning & How to Use These Demos</span>' +
+            '</span>';
+        gettingStarted.onclick = function() { self.openGettingStarted(); };
+        this.main.appendChild(gettingStarted);
+    };
+
+    Dashboard.prototype.setupModal = function() {
+        var self = this;
+
+        this.modalOverlay.innerHTML = '';
+
+        // Modal container
+        this.modal = Utils.createElement('div', 'moon-widget-modal');
+
+        // Modal header with close button
+        this.modalHeader = Utils.createElement('div', 'moon-widget-modal-header');
+        this.modalTitle = Utils.createElement('h2', 'moon-widget-modal-title');
+        var closeBtn = Utils.createElement('button', 'moon-widget-modal-close');
+        closeBtn.innerHTML = '×';
+        closeBtn.onclick = function() { self.closeModal(); };
+        this.modalHeader.appendChild(this.modalTitle);
+        this.modalHeader.appendChild(closeBtn);
+        this.modal.appendChild(this.modalHeader);
+
+        // Modal body (widget content goes here)
+        this.modalBody = Utils.createElement('div', 'moon-widget-modal-body');
+        this.modal.appendChild(this.modalBody);
+
+        this.modalOverlay.appendChild(this.modal);
+
+        // Click outside to close
+        this.modalOverlay.onclick = function(e) {
+            if (e.target === self.modalOverlay) {
+                self.closeModal();
+            }
+        };
+
+        // ESC key to close
+        document.addEventListener('keydown', function(e) {
+            if (e.key === 'Escape' && self.modalOpen) {
+                self.closeModal();
+            }
+        });
+    };
+
+    Dashboard.prototype.openWidget = function(widgetId) {
         var WidgetClass = WidgetRegistry[widgetId];
-        if (WidgetClass) {
-            this.currentWidget = widgetId;
-            this.currentWidgetInstance = new WidgetClass();
-            this.currentWidgetInstance.mount(this.main, { dashboard: this });
+        if (!WidgetClass) return;
+
+        var widget = WidgetList.find(function(w) { return w.id === widgetId; });
+        this.modalTitle.innerHTML = '<span class="moon-widget-modal-icon">' + widget.icon + '</span> ' + widget.label;
+
+        this.modalBody.innerHTML = '';
+        this.modalBody.className = 'moon-widget-modal-body';
+
+        this.currentWidgetInstance = new WidgetClass();
+        this.currentWidgetInstance.mount(this.modalBody, { dashboard: this, isModal: true });
+
+        // Remove the widget header since modal has its own, add spacer
+        var widgetHeader = this.modalBody.querySelector('.moon-widget-header');
+        if (widgetHeader) {
+            widgetHeader.remove();
         }
 
-        this.updateKeyStatus();
+        // Add spacer at top for breathing room
+        var spacer = Utils.createElement('div', 'moon-modal-spacer');
+        spacer.style.height = '24px';
+        spacer.style.flexShrink = '0';
+        var widgetBody = this.modalBody.querySelector('.moon-widget-body');
+        if (widgetBody) {
+            widgetBody.parentNode.insertBefore(spacer, widgetBody);
+        }
+
+        // Add info section as footer (outside modal body, at bottom of modal)
+        var info = WidgetInfo[widgetId];
+        if (info) {
+            var infoSection = Utils.createElement('div', 'moon-widget-info');
+            infoSection.innerHTML =
+                '<div class="moon-widget-info-section">' +
+                    '<h4>What It Does</h4>' +
+                    '<p>' + info.whatItDoes + '</p>' +
+                '</div>' +
+                '<div class="moon-widget-info-section">' +
+                    '<h4>Why It\'s Useful</h4>' +
+                    '<p>' + info.whyUseful + '</p>' +
+                '</div>' +
+                '<div class="moon-widget-info-section">' +
+                    '<h4>Try This</h4>' +
+                    '<p>' + info.tryThis + '</p>' +
+                '</div>';
+            this.modal.appendChild(infoSection);
+        }
+
+        this.modalOverlay.style.display = 'flex';
+        this.modalOpen = true;
+        document.body.style.overflow = 'hidden';
+    };
+
+    Dashboard.prototype.openGettingStarted = function() {
+        this.modalTitle.innerHTML = '<span class="moon-widget-modal-icon">📖</span> Getting Started';
+
+        this.modalBody.innerHTML = '';
+        this.modalBody.className = 'moon-widget-modal-body moon-getting-started-content';
+
+        var content = Utils.createElement('div', 'moon-gs-content');
+
+        // Intro
+        var intro = Utils.createElement('p', 'moon-gs-intro');
+        intro.textContent = 'Welcome! This interactive demo shows how artificial intelligence can "see" and understand what\'s in your camera feed using visual reasoning.';
+        content.appendChild(intro);
+
+        // Sections
+        GettingStartedContent.sections.forEach(function(section) {
+            var sectionEl = Utils.createElement('div', 'moon-gs-section');
+            sectionEl.innerHTML =
+                '<h3>' + section.title + '</h3>' +
+                '<p>' + section.content + '</p>';
+            content.appendChild(sectionEl);
+        });
+
+        // Links
+        var links = Utils.createElement('div', 'moon-gs-links');
+        links.innerHTML =
+            '<h3>Learn More</h3>' +
+            '<p>' +
+                '<a href="https://docs.moondream.ai" target="_blank">MoonDream API Docs</a> · ' +
+                '<a href="https://ptzoptics.com" target="_blank">PTZOptics</a> · ' +
+                '<a href="https://github.com/matthewidavis/PTZOptics-Moondreams" target="_blank">GitHub</a>' +
+            '</p>';
+        content.appendChild(links);
+
+        this.modalBody.appendChild(content);
+
+        this.modalOverlay.style.display = 'flex';
+        this.modalOpen = true;
+        document.body.style.overflow = 'hidden';
+    };
+
+    Dashboard.prototype.closeModal = function() {
+        if (this.currentWidgetInstance) {
+            this.currentWidgetInstance.unmount();
+            this.currentWidgetInstance = null;
+        }
+
+        // Remove info footer if present
+        var infoSection = this.modal.querySelector('.moon-widget-info');
+        if (infoSection) {
+            infoSection.remove();
+        }
+
+        this.modalOverlay.style.display = 'none';
+        this.modalOpen = false;
+        document.body.style.overflow = '';
     };
 
     // ============================================================
